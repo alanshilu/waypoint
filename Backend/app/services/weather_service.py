@@ -84,6 +84,18 @@ def get_forecast(lat: float, lon: float, days: int = 7, units: str = "fahrenheit
         })
     return forecast
 
+def get_utc_offset_seconds(lat: float, lon: float) -> int:
+    """The current UTC offset at a point, from Open-Meteo's time zone lookup (cached like other calls)."""
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": ["weather_code"],
+        "timezone": "auto",
+        "forecast_days": 1,
+    }
+    responses = openmeteo.weather_api(URL, params=params)
+    return int(responses[0].UtcOffsetSeconds())
+
 def get_forecast_for_date(lat: float, lon: float, target_date, units: str = "fahrenheit") -> dict | None:
     # FIX: Accept strings from the API and convert them to date objects
     if isinstance(target_date, str):

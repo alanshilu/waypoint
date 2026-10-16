@@ -44,3 +44,39 @@ def search_address(query: str) -> list[dict]:
         })
 
     return results
+
+
+def near_label(lat: float, lon: float) -> str:
+    """The name used when a point cannot be reverse geocoded. Never a guessed place name."""
+    return f"near {lat:.3f},{lon:.3f}"
+
+
+def reverse_geocode(lat: float, lon: float) -> str:
+    """
+    Names the town or area at a point via OpenRouteService, e.g.
+    "Fort Stockton, Texas, United States". Returns near_label(lat, lon) on any
+    failure or empty result, so a name always comes from the geocoder or is
+    plainly a coordinate.
+    """
+    query = parse.urlencode({
+        "api_key": settings.ors_api_key,
+        "point.lat": lat,
+        "point.lon": lon,
+        "size": 1,
+        "layers": "locality,localadmin,county",
+    })
+    req = request.Request(
+        f"https://api.openrouteservice.org/geocode/reverse?{query}",
+        headers={"Accept": "application/json"},
+    )
+    try:
+        with request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        props = data["features"][0]["properties"]
+    except Exception:  # noqa: BLE001 - any failure falls back to coordinates
+        return near_label(lat, lon)
+
+    parts = [props.get("locality") or props.get("localadmin") or props.get("name"), props.get("region"),
+             props.get("country")]
+    label = ", ".join(dict.fromkeys(p for p in parts if p))
+    return label or near_label(lat, lon)

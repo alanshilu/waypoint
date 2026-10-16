@@ -1,13 +1,19 @@
 # app/api/v1/trips.py
+from datetime import datetime, time, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
-from geoalchemy2.shape import from_shape
+from sqlalchemy.orm import Session
+
+from app.api.v1.serializers import DEFAULT_SIMPLIFY_TOLERANCE, trip_to_dict
 from app.core.db import get_db
 from app.models.route import Route
 from app.models.trip import Trip
 from app.schemas.trip import TripCreate
-from app.api.v1.serializers import DEFAULT_SIMPLIFY_TOLERANCE, trip_to_dict
+from app.services.geocoding_service import reverse_geocode
+from app.services.stop_planning import plan_stops
+from app.services.weather_service import get_forecast_for_date, get_utc_offset_seconds
 
 router = APIRouter()
 
@@ -83,3 +89,76 @@ def get_trip(
             latest[selected.route_type] = selected
 
     return trip_to_dict(trip, sorted(latest.values(), key=lambda r: r.id), tolerance)
+
+
+PLAN_NOTES = [
+    "Driving time is spread along the route in proportion to distance (uniform pace).",
+    "Arrival dates use the origin's UTC offset for the whole trip; time-zone crossings and DST changes are not applied.",
+    "Overnight points are where each day's driving time runs out; names come from reverse geocoding, "
+    "or 'near <lat>,<lon>' when that fails.",
+    "forecast is null when the arrival date is more than 15 days away or the lookup fails.",
+]
+
+
+@router.post("/{trip_id}/plan")
+def plan_trip_stops(
+    trip_id: int,
+    route_id: int = Query(..., description="One of this trip's routes"),
+    max_hours: float = Query(8, gt=0, le=16, description="Maximum driving hours per day"),
+    start: datetime | None = Query(None, description="Departure, ISO 8601. Default: tomorrow 08:00 at the origin."),
+    db: Session = Depends(get_db),
+):
+    """
+    Splits a route into days of at most max_hours of driving and returns each
+    overnight stop and the destination with its arrival date and the forecast
+    for that date. Stop positions are computed, never guessed; see notes.
+    """
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    route = db.query(Route).filter(Route.id == route_id, Route.trip_id == trip_id).first()
+    if not route:
+        raise HTTPException(status_code=404, detail="Route not found for this trip")
+
+    origin = to_shape(trip.origin_point)
+    notes = list(PLAN_NOTES)
+    try:
+        offset_s = get_utc_offset_seconds(origin.y, origin.x)
+    except Exception:  # noqa: BLE001 - fall back to UTC and say so
+        offset_s = 0
+        notes.append("The origin's time zone lookup failed; dates use UTC.")
+    tz = timezone(timedelta(seconds=offset_s))
+
+    if start is None:
+        tomorrow = datetime.now(tz).date() + timedelta(days=1)
+        start = datetime.combine(tomorrow, time(8, 0), tzinfo=tz)
+    elif start.tzinfo is None:
+        start = start.replace(tzinfo=tz)
+    else:
+        start = start.astimezone(tz)
+
+    coords = list(to_shape(route.geometry).coords)
+    stops = plan_stops(coords, route.duration_seconds, route.distance_miles, start, max_hours)
+
+    for stop in stops:
+        stop["id"] = f"{route.id}-{stop['day']}"
+        if stop["kind"] == "destination":
+            stop["name"] = trip.destination_name
+        else:
+            stop["name"] = reverse_geocode(stop["lat"], stop["lon"])
+        try:
+            stop["forecast"] = get_forecast_for_date(stop["lat"], stop["lon"], stop["arrival_date"])
+        except Exception:  # noqa: BLE001 - a missing forecast must not lose the plan
+            stop["forecast"] = None
+
+    return {
+        "trip_id": trip.id,
+        "route_id": route.id,
+        "route_type": route.route_type,
+        "start": start.isoformat(timespec="minutes"),
+        "utc_offset_hours": offset_s / 3600,
+        "max_drive_hours_per_day": max_hours,
+        "days": len(stops),
+        "stops": stops,
+        "notes": notes,
+    }
