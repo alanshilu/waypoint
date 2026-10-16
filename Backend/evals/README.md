@@ -79,4 +79,28 @@ Checks that passed although the field report says they failed:
 
 ## Before and after
 
-Filled in by step 7.
+`reports/final.json`: the agent after steps 3-6 (terrain-only score, `plan_stops`, the new prompt and structured final answer, per-turn cache, idempotent tools) on Claude Sonnet 5.5, against the backend at commit `5a2ea04`, on 2026-10-16. Both reports are graded by the same checks (commit `9ab8e0d` onward; re-grading the baseline with them changed no verdict).
+
+| Check | Baseline | Final |
+|---|---|---|
+| a numeric_grounding | 8/10 | 10/10 |
+| b no_invented_scale | 10/10 | 10/10 |
+| c stops_grounded | 6/10 | 10/10 |
+| d weather_on_arrival_dates | 6/10 | 10/10 |
+| e poi_coords_grounded | 10/10 | 10/10 |
+| f no_duplicate_work | 10/10 | 10/10 |
+| g concise_reply | 1/10 | 10/10 |
+| **Cases passing every check** | **1/10** | **10/10** |
+| Agent requests | 50 | 55 |
+| Agent input tokens, uncached | 456,716 | 132 |
+| Agent input tokens, cache write / read | 0 / 0 | 56,505 / 175,388 |
+| Agent output tokens | 20,021 | 9,442 |
+| Judge tokens (in / out) | 10,983 / 4,170 | 6,665 / 4,525 |
+| **Estimated cost** | **$1.12** | **$0.27** |
+
+Where the cost went: the baseline re-sent full route geometry (up to about 45 KB of JSON per `generate_routes` result) on every loop iteration, uncached. The final agent sees a point count instead of the geometry, and the stable prefix (tools and system prompt) is cached. Total input tokens fell by about half (456,716 to 232,025), and most of what remains is billed at the cache-read rate.
+
+Caveats on reading the final numbers:
+
+- Most final cases reused trips and routes that earlier runs had created within 24 hours (the replies say "this trip already existed"). That is the idempotency working, but it also means the final run barely exercised fresh ORS route generation. A run against an empty database would also exercise that path.
+- A perfect run is one sample. The cases most likely to flip are listed in the summary of the change that added this table.
