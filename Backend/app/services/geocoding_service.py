@@ -1,40 +1,8 @@
 import json
 from urllib import error, parse, request
-import json
-from urllib import parse, request, error
+
 from app.core.config import settings
 
-def search_address(query: str) -> list[dict]:
-    """Return matching OpenRouteService geocoding results."""
-    encoded_query = parse.quote(query)
-    url = (
-        "https://api.openrouteservice.org/geocode/search"
-        f"?api_key={parse.quote(settings.ors_api_key)}&text={encoded_query}"
-    )
-    req = request.Request(url, headers={"Accept": "application/json"})
-
-    try:
-        with request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except error.HTTPError as exc:
-        raise ValueError(f"Failed to geocode address: {query}") from exc
-
-    results = []
-    for feature in data.get("features", []):
-        properties = feature.get("properties", {})
-        coordinates = feature.get("geometry", {}).get("coordinates", [])
-        if len(coordinates) < 2:
-            continue
-
-        label = properties.get("label") or properties.get("name", "Unknown Location")
-        results.append({
-            "label": label,
-            "lon": coordinates[0],
-            "lat": coordinates[1],
-            "confidence": properties.get("confidence", 0),
-        })
-
-    return results
 
 def search_address(query: str) -> list[dict]:
     """
@@ -54,12 +22,12 @@ def search_address(query: str) -> list[dict]:
         raise ValueError(f"Failed to geocode address: {query}")
 
     results = []
-    
+
     # ORS returns a GeoJSON FeatureCollection
     for feature in data.get("features", []):
         props = feature.get("properties", {})
         coords = feature.get("geometry", {}).get("coordinates", [0, 0])
-        
+
         # Build a clean, human-readable label (e.g., "San Francisco, California, USA")
         label_parts = [
             props.get("name"),

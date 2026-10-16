@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     ors_api_key: str = Field(validation_alias="ORS_API_KEY")
     anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
 
+    # Agent. Model ids are configuration, never hardcoded in the agent code.
+    agent_model: str = Field(default="claude-sonnet-5-5", validation_alias="AGENT_MODEL")
+    eval_judge_model: str = Field(default="claude-haiku-5-5", validation_alias="EVAL_JUDGE_MODEL")
+    # The agent's tools call this API over HTTP
+    api_base_url: str = Field(default="http://localhost:8000", validation_alias="API_BASE_URL")
+
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",

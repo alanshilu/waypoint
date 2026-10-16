@@ -20,4 +20,4 @@ async def live_location_endpoint(websocket: WebSocket):
             print(f"User on Trip is at {lat}, {lon}")
             
     except WebSocketDisconnect:
-        print(f"Trip disconnected.")
+        print("Trip disconnected.")
