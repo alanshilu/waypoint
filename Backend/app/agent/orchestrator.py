@@ -3,7 +3,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 import anthropic
 
@@ -58,11 +58,15 @@ class Step:
     result: str | None = None  # JSON, truncated to TRACE_RESULT_LIMIT characters
     error: str | None = None
     cached: bool = False  # served from this turn's cache; the tool did not run again
+    # Tokens of the model call that requested this tool. Tool calls made in the
+    # same model response share that call (same model_call index).
+    tokens: dict | None = None
+    model_call: int = 0
     full_result: Any = field(default=None, repr=False)
 
     def to_dict(self) -> dict:
         return {"tool": self.tool, "args": self.args, "result": self.result, "ms": self.ms, "error": self.error,
-                "cached": self.cached}
+                "cached": self.cached, "tokens": self.tokens, "model_call": self.model_call}
 
 
 @dataclass
@@ -155,10 +159,26 @@ def _run_tool(name: str, args: dict) -> tuple[Any, str | None]:
         return None, f"{type(e).__name__}: {e}"
 
 
-def run_agent_turn(conversation_history: list, user_message: str) -> AgentTurn:
+def _call_tokens(usage) -> dict:
+    return {
+        "input": usage.input_tokens or 0,
+        "output": usage.output_tokens or 0,
+        "cache_read": getattr(usage, "cache_read_input_tokens", 0) or 0,
+        "cache_write": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+    }
+
+
+def run_agent_turn(
+    conversation_history: list,
+    user_message: str,
+    on_event: Callable[[dict], None] | None = None,
+) -> AgentTurn:
     """
     conversation_history: list of prior {"role": ..., "content": ...} messages
     user_message: the new user message (string)
+    on_event: optional callback for live progress, called from this thread with
+        {"type": "tool_start", "tool", "args"} before each tool call and
+        {"type": "tool_end", "tool", "ms", "error", "cached", "tokens"} after it.
 
     Returns an AgentTurn. Pass turn.messages back in as conversation_history on
     the next call so the agent keeps context across turns.
@@ -168,8 +188,9 @@ def run_agent_turn(conversation_history: list, user_message: str) -> AgentTurn:
     usage = Usage(model=settings.agent_model)
     # (tool, args) -> (model-visible content, full result, error): identical calls in a turn run once
     cache: dict[str, tuple[str, Any, str | None]] = {}
+    emit = on_event or (lambda event: None)
 
-    for _ in range(MAX_MODEL_CALLS_PER_TURN):
+    for model_call in range(MAX_MODEL_CALLS_PER_TURN):
         response = client.beta.messages.create(
             model=settings.agent_model,
             max_tokens=MAX_TOKENS,
@@ -185,6 +206,7 @@ def run_agent_turn(conversation_history: list, user_message: str) -> AgentTurn:
             fallbacks="default",
         )
         usage.add(response.usage)
+        call_tokens = _call_tokens(response.usage)
         messages.append({"role": "assistant", "content": response.content})
 
         if response.stop_reason == "refusal":
@@ -211,6 +233,7 @@ def run_agent_turn(conversation_history: list, user_message: str) -> AgentTurn:
                 continue
             args = dict(block.input)
             key = _cache_key(block.name, args)
+            emit({"type": "tool_start", "tool": block.name, "args": args})
             started = time.perf_counter()
             hit = key in cache
             if not hit:
@@ -219,11 +242,15 @@ def run_agent_turn(conversation_history: list, user_message: str) -> AgentTurn:
                            else f"Error calling {block.name}: {error}")
                 cache[key] = (content, result, error)
             content, result, error = cache[key]
-            steps.append(Step(
+            step = Step(
                 tool=block.name, args=args, ms=round((time.perf_counter() - started) * 1000),
                 result=None if error else _truncate(json.dumps(result, default=str)),
-                error=error, cached=hit, full_result=copy.deepcopy(result),
-            ))
+                error=error, cached=hit, tokens=call_tokens, model_call=model_call,
+                full_result=copy.deepcopy(result),
+            )
+            steps.append(step)
+            emit({"type": "tool_end", "tool": step.tool, "ms": step.ms, "error": step.error,
+                  "cached": step.cached, "tokens": step.tokens, "model_call": model_call})
             entry = {"type": "tool_result", "tool_use_id": block.id, "content": content}
             if error:
                 entry["is_error"] = True
