@@ -1,15 +1,22 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON
-from geoalchemy2 import Geometry
 from datetime import datetime, timezone
+
+from geoalchemy2 import Geometry
+from sqlalchemy import JSON, Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, func
 
 from app.core.db import Base
 
 
 class Route(Base):
     __tablename__ = "routes"
+    __table_args__ = (
+        CheckConstraint("route_type IN ('fastest','backroads')", name="ck_routes_type"),
+        CheckConstraint("distance_miles > 0", name="ck_routes_distance"),
+        CheckConstraint("duration_seconds > 0", name="ck_routes_duration"),
+    )
 
     id = Column(Integer, primary_key=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
+    # Deleting a trip deletes its routes
+    trip_id = Column(Integer, ForeignKey("trips.id", name="routes_trip_id_fkey", ondelete="CASCADE"), nullable=False)
 
     route_type = Column(String, nullable=False)
     distance_miles = Column(Float, nullable=False)
@@ -24,4 +31,13 @@ class Route(Base):
     elevation_profile = Column(JSON, nullable=True)
 
     is_selected = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+
+# Serves "newest route of each type for a trip" (GET /trips/{id}, route reuse in /routes/generate)
+Index("idx_routes_trip_type_created", Route.trip_id, Route.route_type, Route.created_at.desc())

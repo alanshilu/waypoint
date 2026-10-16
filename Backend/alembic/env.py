@@ -16,6 +16,7 @@ def run_migrations_offline():
         url=engine.url.render_as_string(hide_password=False),
         target_metadata=target_metadata,
         include_object=include_object,
+        compare_server_default=True,
         literal_binds=True,
     )
     with context.begin_transaction():
@@ -28,6 +29,8 @@ def run_migrations_online():
             connection=connection,
             target_metadata=target_metadata,
             include_object=include_object,
+            # off by default in Alembic; without it a missing DEFAULT never shows as a diff
+            compare_server_default=True,
         )
         with context.begin_transaction():
             context.run_migrations()
