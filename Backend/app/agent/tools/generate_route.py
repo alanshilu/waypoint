@@ -15,9 +15,11 @@ def generate_routes(trip_id: int) -> dict:
 TOOL_SCHEMA = {
     "name": "generate_routes",
     "description": "Generates fastest and backroads route candidates with scenic scores.",
+    "strict": True,
     "input_schema": {
         "type": "object",
         "properties": {"trip_id": {"type": "integer"}},
         "required": ["trip_id"],
+        "additionalProperties": False,
     },
 }

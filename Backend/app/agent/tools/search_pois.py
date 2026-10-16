@@ -12,6 +12,7 @@ def search_pois(lat: float, lon: float) -> dict:
 TOOL_SCHEMA = {
     "name": "search_pois",
     "description": "Finds nearby points of interest (restaurants, fuel, campsites, attractions) around a specific location -- use for questions about a particular stop.",
+    "strict": True,
     "input_schema": {
         "type": "object",
         "properties": {
@@ -19,5 +20,6 @@ TOOL_SCHEMA = {
             "lon": {"type": "number"},
         },
         "required": ["lat", "lon"],
+        "additionalProperties": False,
     },
 }

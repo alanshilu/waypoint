@@ -23,6 +23,7 @@ def create_trip(name, origin_label, origin_lat, origin_lon,
 TOOL_SCHEMA = {
     "name": "create_trip",
     "description": "Creates a new trip record once you have geocoded coordinates for both origin and destination.",
+    "strict": True,
     "input_schema": {
         "type": "object",
         "properties": {
@@ -36,5 +37,6 @@ TOOL_SCHEMA = {
         },
         "required": ["name", "origin_label", "origin_lat", "origin_lon",
                      "destination_label", "destination_lat", "destination_lon"],
+        "additionalProperties": False,
     },
 }

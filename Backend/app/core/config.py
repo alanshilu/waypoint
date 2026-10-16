@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # Agent. Model ids are configuration, never hardcoded in the agent code.
     agent_model: str = Field(default="claude-sonnet-5-5", validation_alias="AGENT_MODEL")
+    agent_effort: str = Field(default="medium", validation_alias="AGENT_EFFORT")
     eval_judge_model: str = Field(default="claude-haiku-5-5", validation_alias="EVAL_JUDGE_MODEL")
     # The agent's tools call this API over HTTP
     api_base_url: str = Field(default="http://localhost:8000", validation_alias="API_BASE_URL")
