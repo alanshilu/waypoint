@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useTrip } from "../state/TripProvider";
-import type { TurnSource } from "../types";
+import type { StepView, TurnSource } from "../types";
 
 const SOURCE_LABEL: Record<TurnSource, string> = {
   mock: "mock fixtures, simulated latency",
-  agent: "LLM agent via POST /agent/message",
-  scripted: "scripted in the browser, no LLM (backend has no /agent/message)",
+  agent: "Claude agent on the backend, POST /agent/message/stream",
 };
+
+const tokenText = (step: StepView) =>
+  step.tokens ? `${step.tokens.input + step.tokens.cache_read + step.tokens.cache_write} / ${step.tokens.output}` : "—";
 
 export default function TraceDrawer() {
   const { lastTurn } = useTrip();
@@ -17,6 +19,7 @@ export default function TraceDrawer() {
   const hits = steps.filter((s) => s.cache === "hit").length;
   const cacheable = steps.filter((s) => s.cache !== null).length;
   const failed = steps.filter((s) => s.status === "error").length;
+  const hasTokens = steps.some((s) => s.tokens);
 
   const summary = !lastTurn
     ? "No agent turn yet"
@@ -52,6 +55,11 @@ export default function TraceDrawer() {
                     Latency
                   </th>
                   <th scope="col">Cache</th>
+                  {hasTokens && (
+                    <th scope="col" className="numeric" title="Tokens of the model call that requested this tool">
+                      Tokens in / out
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -62,6 +70,7 @@ export default function TraceDrawer() {
                     <td className={step.status === "error" ? "warn" : undefined}>{step.status}</td>
                     <td className="numeric">{step.ms === null ? "…" : `${step.ms} ms`}</td>
                     <td className={step.cache === "hit" ? "good" : undefined}>{step.cache ?? "—"}</td>
+                    {hasTokens && <td className="numeric">{tokenText(step)}</td>}
                   </tr>
                 ))}
               </tbody>

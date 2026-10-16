@@ -8,7 +8,18 @@ import {
   routeLabel,
 } from "./format";
 import { buildMileIndex, pointAtMile } from "./geo";
-import type { AgentContext, AgentTurnResult, Place, Route, StepView, Trip } from "./types";
+import type {
+  AgentApiResponse,
+  AgentContext,
+  AgentStreamEvent,
+  AgentTurnResult,
+  Place,
+  PlannedStop,
+  PoiResult,
+  Route,
+  StepView,
+  Trip,
+} from "./types";
 
 type StepListener = (steps: StepView[]) => void;
 
@@ -17,34 +28,150 @@ const shortName = (place: Place) => place.name.split(",")[0];
 /**
  * Runs one agent turn.
  *
- * Real mode first tries POST /agent/message. The backend does not expose that
- * yet, so the fallback is a scripted runner: it reads the intent from the
- * message and calls the same endpoints the LLM agent's tools call, in the
- * order the agent's system prompt prescribes. Mock mode uses the same runner
- * over fixtures, so both modes exercise one code path.
+ * Real mode sends the message to the backend's Claude agent
+ * (POST /agent/message/stream), shows each tool call as it happens, then
+ * reloads the trip with GET /trips/{id} so the map, cards and chart match what
+ * the agent did. Mock mode runs a scripted stand-in over the fixtures.
  */
-export async function runAgentTurn(
-  message: string,
-  context: AgentContext,
-  onSteps: StepListener,
-): Promise<AgentTurnResult> {
-  const remote = await api.postAgentMessage(message, {
-    trip_id: context.trip?.id ?? null,
-    selected_route_id: context.selectedRouteId,
-  });
-  if (remote) {
-    onSteps(remote.steps.map((s) => ({ ...s, status: "done" as const })));
-    return {
-      ...remote,
-      source: "agent",
-      trip: remote.trip,
-      selectedRouteId: remote.trip?.selected_route_id ?? undefined,
-      chips: [],
-    };
-  }
-  return runScripted(message, context, onSteps);
+export function runAgentTurn(message: string, context: AgentContext, onSteps: StepListener): Promise<AgentTurnResult> {
+  return api.USE_MOCK ? runScripted(message, context, onSteps) : runRemote(message, context, onSteps);
 }
 
+// ---- Real mode: the backend agent ------------------------------------------
+
+const SESSION_KEY = "waypoint.agent_session";
+
+function storedSession(): string | null {
+  try {
+    return localStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeSession(id: string | null) {
+  try {
+    if (id) localStorage.setItem(SESSION_KEY, id);
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    // storage unavailable (private window); the session just won't survive a reload
+  }
+}
+
+async function runRemote(message: string, context: AgentContext, onSteps: StepListener): Promise<AgentTurnResult> {
+  const steps: StepView[] = [];
+  const emit = () => onSteps(steps.map((s) => ({ ...s })));
+  const onEvent = (event: AgentStreamEvent) => {
+    if (event.type === "tool_start") {
+      steps.push({ tool: event.tool, status: "running", ms: null, cache: null, tokens: null });
+    } else if (event.type === "tool_end") {
+      const view = [...steps].reverse().find((s) => s.tool === event.tool && s.status === "running");
+      if (view) {
+        view.status = event.error ? "error" : "done";
+        view.ms = event.ms;
+        view.cache = event.cached ? "hit" : null;
+        view.tokens = event.tokens;
+      }
+    }
+    emit();
+  };
+
+  const ask = async (sessionId: string) =>
+    api.streamAgentMessage(
+      { session_id: sessionId, message, selected_route_id: context.userSelectedRouteId },
+      onEvent,
+    );
+
+  let sessionId = storedSession() ?? (await api.createAgentSession());
+  storeSession(sessionId);
+  let response: AgentApiResponse;
+  try {
+    response = await ask(sessionId);
+  } catch (error) {
+    // Sessions expire after an hour without use, and restart with the backend: start a new one once
+    if (!(error instanceof api.ApiError && error.code === "unknown_session")) throw error;
+    sessionId = await api.createAgentSession();
+    storeSession(sessionId);
+    response = await ask(sessionId);
+  }
+
+  // The steps as the server recorded them (the live list can miss events if the stream hiccuped)
+  const finalSteps: StepView[] = response.tool_calls.map((c) => ({
+    tool: c.tool,
+    status: c.error ? "error" : "done",
+    ms: c.ms,
+    cache: c.cached ? "hit" : null,
+    tokens: c.tokens,
+  }));
+  onSteps(finalSteps);
+
+  let trip: Trip | undefined;
+  const warnings: string[] = [];
+  if (response.trip_id != null) {
+    try {
+      trip = await api.getTrip(response.trip_id);
+      trip.weather = arrivalWeather(trip, response.planned_stops);
+    } catch (error) {
+      warnings.push(`Could not load trip ${response.trip_id}: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  const pois = stopsFrom(response);
+  return {
+    reply: [response.reply, ...warnings].filter(Boolean).join("\n\n"),
+    steps: response.tool_calls.map((c) => ({ tool: c.tool, ms: c.ms, cache: c.cached ? "hit" : null, tokens: c.tokens })),
+    state_changed: [...(trip ? ["trip"] : []), ...(pois ? ["pois"] : [])],
+    source: "agent",
+    trip,
+    selectedRouteId: trip?.selected_route_id ?? undefined,
+    pois,
+    chips: trip ? agentChips(trip) : [],
+  };
+}
+
+/** The forecast for the destination's arrival date, if the agent planned stops. */
+function arrivalWeather(trip: Trip, stops: PlannedStop[]): Trip["weather"] {
+  const destination = stops.find((s) => s.kind === "destination" && s.forecast);
+  return destination?.forecast ? [{ ...trip.destination, forecast: [destination.forecast] }] : [];
+}
+
+const shortDate = (iso: string) =>
+  new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+/** What the map's stop list shows: the planned overnight stops, else the last POI search. */
+function stopsFrom(response: AgentApiResponse): PoiResult | undefined {
+  const planned = response.planned_stops;
+  if (planned.length > 0) {
+    return {
+      label: "your planned stops",
+      center: { lat: planned[0].lat, lon: planned[0].lon },
+      items: planned.map((s, i) => ({
+        id: i + 1,
+        name: s.name,
+        category: `day ${s.day}, ${shortDate(s.arrival_date)}`,
+        lat: s.lat,
+        lon: s.lon,
+      })),
+    };
+  }
+  if (response.pois && response.pois.items.length > 0) {
+    return { label: "the search point", center: response.pois.center, items: response.pois.items };
+  }
+  return undefined;
+}
+
+function agentChips(trip: Trip): string[] {
+  const selects = trip.routes.filter((r) => r.id !== trip.selected_route_id).map((r) => `Select ${r.route_type}`);
+  return [...selects, "Where should I stop overnight?", "What's the weather when I arrive?"];
+}
+
+// ---- Mock mode: scripted stand-in over the fixtures ------------------------
+
+/**
+ * Reads the intent from the message and calls the same functions the agent's
+ * tools call, in the order the agent's system prompt prescribes, against
+ * the fixtures in src/fixtures.
+ */
 async function runScripted(
   message: string,
   context: AgentContext,
@@ -79,7 +206,7 @@ async function runScripted(
     reply,
     steps: steps.map((s) => ({ tool: s.tool, ms: s.ms ?? 0, cache: s.cache })),
     state_changed: extra.state_changed ?? [],
-    source: api.USE_MOCK ? "mock" : "scripted",
+    source: "mock",
     trip: extra.trip,
     selectedRouteId: extra.selectedRouteId,
     pois: extra.pois,

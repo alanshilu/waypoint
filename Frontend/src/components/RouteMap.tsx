@@ -46,7 +46,7 @@ const STOPS_PADDING = 0.01;
 const shortName = (place: Place) => place.name.split(",")[0];
 
 export default function RouteMap() {
-  const { trip, selectedRouteId, hoverMile, pois, selectRoute, error } = useTrip();
+  const { trip, tripLoading, selectedRouteId, hoverMile, pois, selectRoute, error } = useTrip();
   const [hoveredPoi, setHoveredPoi] = useState<number | null>(null);
   const [ref, { width, height }] = useSize<HTMLDivElement>();
   const [mode, setMode] = useState<FitMode>("usa");
@@ -304,6 +304,12 @@ export default function RouteMap() {
             ))}
           </ol>
         </section>
+      )}
+
+      {tripLoading && (
+        <p className="map-loading" role="status">
+          Loading your trip&hellip;
+        </p>
       )}
 
       {error && (

@@ -31,8 +31,25 @@ function StepChecklist({ steps }: { steps: StepView[] }) {
   );
 }
 
+/** What the agent is doing right now, in words, from the tool it is running. */
+const ACTIVITY: Record<string, string> = {
+  geocode_location: "Looking up places",
+  create_trip: "Saving the trip",
+  generate_routes: "Searching routes",
+  plan_stops: "Planning overnight stops",
+  get_weather_forecast: "Checking the weather",
+  search_pois: "Finding places to stop",
+  select_route: "Selecting the route",
+};
+
+function pendingLabel(steps: StepView[]): string {
+  const running = [...steps].reverse().find((s) => s.status === "running");
+  // between tool calls the model is deciding what to do next, or writing the answer
+  return running ? `${ACTIVITY[running.tool] ?? `Running ${running.tool}`}…` : "Thinking…";
+}
+
 export default function ChatPanel() {
-  const { messages, busy, sendMessage, trip, selectedRouteId } = useTrip();
+  const { messages, busy, sendMessage, retryLast, trip, selectedRouteId } = useTrip();
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +94,18 @@ export default function ChatPanel() {
             <div key={message.id} className="msg assistant">
               <StepChecklist steps={message.steps} />
               {message.pending ? (
-                message.steps.length === 0 && <p className="msg-pending">Thinking&hellip;</p>
+                <p className="msg-pending" role="status">
+                  {pendingLabel(message.steps)}
+                </p>
+              ) : message.failed ? (
+                <div className="msg-error" role="alert">
+                  <p>{message.text}</p>
+                  {message.id === messages[messages.length - 1]?.id && (
+                    <button type="button" className="chip" disabled={busy} onClick={retryLast}>
+                      Try again
+                    </button>
+                  )}
+                </div>
               ) : (
                 <p className="msg-text">{message.text}</p>
               )}

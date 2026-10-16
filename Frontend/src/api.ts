@@ -1,7 +1,8 @@
 import tripFixtureJson from "./fixtures/trip.sf-la.json";
 import poisFixtureJson from "./fixtures/pois.json";
 import type {
-  AgentReply,
+  AgentApiResponse,
+  AgentStreamEvent,
   CacheStatus,
   ForecastDay,
   Place,
@@ -37,6 +38,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number | null,
+    /** Machine-readable code from the agent endpoints' {"error": {"code", "message"}} */
+    readonly code: string | null = null,
   ) {
     super(message);
   }
@@ -44,25 +47,34 @@ export class ApiError extends Error {
 
 // ---- Real transport --------------------------------------------------------
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  callMeta.cache = null;
+async function send(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, init);
   } catch {
-    throw new ApiError(`Backend unreachable at ${API_BASE}`, null);
+    throw new ApiError(`Backend unreachable at ${API_BASE}`, null, "unreachable");
   }
   if (!response.ok) {
     let detail = response.statusText;
+    let code: string | null = null;
     try {
       const body = await response.json();
       if (typeof body?.detail === "string") detail = body.detail;
+      if (typeof body?.error?.message === "string") {
+        detail = body.error.message;
+        code = body.error.code ?? null;
+      }
     } catch {
       // non-JSON error body; keep the status text
     }
-    throw new ApiError(`${response.status} ${detail}`, response.status);
+    throw new ApiError(detail, response.status, code);
   }
-  return (await response.json()) as T;
+  return response;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  callMeta.cache = null;
+  return (await (await send(path, init)).json()) as T;
 }
 
 const postJson = (body: unknown): RequestInit => ({
@@ -202,24 +214,60 @@ export async function getForecast(lat: number, lon: number): Promise<ForecastDay
   return data.forecast ?? [];
 }
 
-let agentEndpointMissing = false;
+// ---- Agent (real mode only; mock mode runs the scripted agent in agent.ts) --
+
+/** POST /agent/sessions -> a new conversation id. */
+export async function createAgentSession(): Promise<string> {
+  const data = await request<{ session_id: string }>("/agent/sessions", { method: "POST" });
+  return data.session_id;
+}
+
+export interface AgentMessageBody {
+  session_id: string;
+  message: string;
+  selected_route_id: number | null;
+}
+
+/** POST /agent/message: one turn, answered when it finishes. */
+export function sendAgentMessage(body: AgentMessageBody): Promise<AgentApiResponse> {
+  return request<AgentApiResponse>("/agent/message", postJson(body));
+}
 
 /**
- * POST /agent/message. The backend has no such endpoint yet, so this returns
- * null on 404/405 and the caller falls back to the scripted runner.
+ * POST /agent/message/stream: the same turn as server-sent events. onEvent
+ * receives tool_start / tool_end as the agent works; the promise resolves with
+ * the final answer. Session and rate-limit errors arrive as an HTTP error
+ * before the stream starts; failures during the turn as an "error" event.
+ * Falls back to the non-streaming endpoint if the browser can't read the body as a stream.
  */
-export async function postAgentMessage(
-  message: string,
-  context: { trip_id: number | null; selected_route_id: number | null },
-): Promise<(AgentReply & { trip?: Trip }) | null> {
-  if (USE_MOCK || agentEndpointMissing) return null;
-  try {
-    return await request<AgentReply & { trip?: Trip }>("/agent/message", postJson({ message, ...context }));
-  } catch (error) {
-    if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
-      agentEndpointMissing = true;
-      return null;
+export async function streamAgentMessage(
+  body: AgentMessageBody,
+  onEvent: (event: AgentStreamEvent) => void,
+): Promise<AgentApiResponse> {
+  const response = await send("/agent/message/stream", postJson(body));
+  if (!response.body) return sendAgentMessage(body);
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value.replace(/\r\n/g, "\n");
+    let boundary: number;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const lines = frame.split("\n").filter((line) => line && !line.startsWith(":"));
+      const event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
+      const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+      if (!event || !data) continue;
+      const payload = JSON.parse(data);
+      if (event === "final") return payload as AgentApiResponse;
+      if (event === "error") {
+        throw new ApiError(payload.error?.message ?? "The agent failed", null, payload.error?.code ?? "agent_error");
+      }
+      onEvent({ ...payload, type: event } as AgentStreamEvent);
     }
-    throw error;
   }
+  throw new ApiError("The agent stream ended without an answer", null, "stream_ended");
 }

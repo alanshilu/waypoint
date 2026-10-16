@@ -69,12 +69,21 @@ export interface PoiResult {
   items: Poi[];
 }
 
-export type CacheStatus ="hit" | "miss" | null;
+export type CacheStatus = "hit" | "miss" | null;
+
+/** Tokens of the model call that requested a tool (shared by tool calls from the same call). */
+export interface StepTokens {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+}
 
 export interface AgentStep {
   tool: string;
   ms: number;
   cache: CacheStatus;
+  tokens?: StepTokens | null;
 }
 
 export interface AgentReply {
@@ -82,6 +91,57 @@ export interface AgentReply {
   steps: AgentStep[];
   state_changed: string[];
 }
+
+// ---- POST /agent/message(/stream) ------------------------------------------
+
+export interface AgentFinalAnswer {
+  summary: string;
+  recommended_route_type: "fastest" | "backroads" | "none";
+  departure_window: { start: string; end: string; reason: string };
+  stops: string[];
+  warnings: string[];
+}
+
+export interface AgentToolCall {
+  tool: string;
+  ms: number;
+  cached: boolean;
+  error: string | null;
+  tokens: StepTokens | null;
+  model_call: number;
+}
+
+/** A stop from plan_stops that the agent's answer recommends. */
+export interface PlannedStop {
+  id: string;
+  day: number;
+  kind: "overnight" | "destination";
+  name: string;
+  lat: number;
+  lon: number;
+  cumulative_miles?: number;
+  cumulative_drive_hours?: number;
+  arrival_date: string;
+  arrival_time?: string;
+  forecast?: ForecastDay | null;
+}
+
+export interface AgentApiResponse {
+  session_id: string;
+  trip_id: number | null;
+  reply: string;
+  answer: AgentFinalAnswer;
+  planned_stops: PlannedStop[];
+  pois: { center: { lat: number; lon: number }; items: Poi[] } | null;
+  tool_calls: AgentToolCall[];
+  usage: { input_tokens: number; output_tokens: number; requests: number };
+}
+
+/** Server-sent events from POST /agent/message/stream. */
+export type AgentStreamEvent =
+  | { type: "start"; session_id: string }
+  | { type: "tool_start"; tool: string; args: Record<string, unknown> }
+  | { type: "tool_end"; tool: string; ms: number; error: string | null; cached: boolean; tokens: StepTokens | null };
 
 // ---- UI-side types ---------------------------------------------------------
 
@@ -91,6 +151,7 @@ export interface StepView {
   status: "running" | "done" | "error";
   ms: number | null;
   cache: CacheStatus;
+  tokens?: StepTokens | null;
 }
 
 export interface ChatMessage {
@@ -100,14 +161,18 @@ export interface ChatMessage {
   steps: StepView[];
   pending: boolean;
   chips: string[];
+  /** The turn failed; the text is the error and the UI offers a retry. */
+  failed?: boolean;
 }
 
 /** Where a turn's tool calls came from, shown in the trace drawer. */
-export type TurnSource = "mock" | "agent" | "scripted";
+export type TurnSource = "mock" | "agent";
 
 export interface AgentContext {
   trip: Trip | null;
   selectedRouteId: number | null;
+  /** A route the user picked on the map since the last message; sent so the agent knows. */
+  userSelectedRouteId: number | null;
 }
 
 /** What an agent turn hands back to the UI on top of the wire reply. */
@@ -117,6 +182,7 @@ export interface AgentTurnResult extends AgentReply {
   selectedRouteId?: number;
   pois?: PoiResult;
   chips: string[];
+  failed?: boolean;
 }
 
 // ---- Raw shapes the FastAPI backend returns today ---------------------------

@@ -60,9 +60,14 @@ npm run fixture     # regenerate src/fixtures/trip.sf-la.json
 
 ## How real mode differs from mock mode
 
-- **No agent endpoint.** The backend has no `POST /agent/message`. The UI tries it once, gets a 404, and falls back to a scripted runner in `src/agent.ts` that calls the same endpoints the agent's tools call, in the same order. The tool calls and latencies shown are real; the reply text is a template, not an LLM. The trace drawer says which source was used.
-- **Elevation chart for new routes only.** The backend stores an elevation profile with each route it generates. Routes saved before that have none, so for those the panel is hidden and the map takes the full height.
-- **No cache status.** The backend does not report cache hits, so the trace shows "cache not reported".
+- **The chat is the real Claude agent.** Messages go to the backend's `POST /agent/message/stream`. Each tool call appears as it happens ("Searching routes…"), and the trace drawer shows its latency and the tokens of the model call that made it. Mock mode instead runs a scripted stand-in over the fixtures (`runScripted` in `src/agent.ts`).
+- **The map follows the agent.** After each reply the UI reloads the trip with `GET /trips/{id}`, so the map, cards and elevation chart show what the agent created or selected. The stop list shows the agent's planned overnight stops, or its last search for places nearby.
+- **Reloading keeps the trip.** The trip id is kept in the URL (`?trip=24`) and in local storage. The agent conversation id is kept in local storage; if the backend restarted and forgot it, the UI starts a new conversation by itself.
+- **Picking a route on the map tells the agent.** The next message carries the selected route id.
+- **Errors show in the chat** with a "Try again" button: backend unreachable, rate limited (10 messages a minute per conversation), agent timeout, or the AI service unavailable.
+- **Elevation chart for new routes only.** Routes saved before the backend kept elevation have none; for those the panel is hidden.
+
+The backend must allow the frontend's origin: set `CORS_ORIGINS` in `Backend/.env` (comma-separated; default `http://localhost:5173`).
 
 All translation between the backend's response shapes and the UI's types happens in `src/api.ts`.
 
