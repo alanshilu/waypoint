@@ -101,10 +101,13 @@ def get_forecast_for_date(lat: float, lon: float, target_date, units: str = "fah
     if isinstance(target_date, str):
         target_date = date.fromisoformat(target_date)
 
+    # Open-Meteo's days are in the location's time zone, which can be a day
+    # behind or ahead of the server's date. Allow one day of slack each way and
+    # ask for one extra day, then match on the date itself.
     days_ahead = (target_date - date.today()).days
-    if days_ahead < 0 or days_ahead > 15: # Open-Meteo allows max 16 days total (0 to 15 days ahead)
+    if days_ahead < -1 or days_ahead > 15: # Open-Meteo allows max 16 days total (0 to 15 days ahead)
         return None
 
-    forecast = get_forecast(lat, lon, days=days_ahead + 1, units=units)
+    forecast = get_forecast(lat, lon, days=min(days_ahead + 2, 16), units=units)
     match = [f for f in forecast if f["date"] == target_date.isoformat()]
     return match[0] if match else None

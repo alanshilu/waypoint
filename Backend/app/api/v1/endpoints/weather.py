@@ -35,6 +35,8 @@ def weather_forecast(
         # Default behavior: return the standard 7-day list
         return {"forecast": get_forecast(lat, lon, days=7)}
         
+    except HTTPException:
+        raise  # the 400 above, not a server error
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
     except Exception as exc:
