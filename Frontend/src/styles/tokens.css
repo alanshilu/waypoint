@@ -1,0 +1,32 @@
+:root {
+  /* Palette */
+  --espresso: #3A2418;
+  --gold: #D9A441;
+  --rust: #B5562E;
+  --olive: #6B7248;
+  --parchment: #F1E4C3;
+
+  /* Derived tones (tints of the palette only) */
+  --parchment-deep: #E7D7AF;
+  --parchment-light: #F8F0DA;
+  --hairline: rgba(58, 36, 24, 0.22);
+  --hairline-faint: rgba(58, 36, 24, 0.1);
+  --ink-muted: rgba(58, 36, 24, 0.62);
+
+  /* Meaning */
+  --route-selected: var(--rust);
+  --route-other: var(--espresso);
+  --positive: var(--olive);
+  --warning: var(--gold);
+
+  /* Type */
+  --font-heading: "Fraunces", Georgia, serif;
+  --font-body: "Work Sans", system-ui, sans-serif;
+  --font-data: "Courier Prime", "Courier New", monospace;
+
+  /* Layout */
+  --chat-width: 320px;
+  --trace-bar: 32px;
+  --elevation-height: 170px;
+  --gap: 12px;
+}

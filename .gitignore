@@ -1,0 +1,16 @@
+# Gitignore placeholder
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+node_modules/
+dist/
+.vite/
+*.log
+.DS_Store
+backups/
+
+# Local caches and databases
+*.sqlite
+.pytest_cache/
+.ruff_cache/

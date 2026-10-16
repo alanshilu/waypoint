@@ -1,0 +1,6 @@
+{
+  "python.analysis.useNearestConfiguration": true,
+  "python.analysis.stubPath": "typings",
+  "python.analysis.extraPaths": ["."],
+  "python.analysis.include": ["app", "typings"]
+}

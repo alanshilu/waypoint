@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Waypoint — Design Board v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --espresso:#3A2418;
+    --espresso-2:#4A2E1C;
+    --gold:#D9A441;
+    --gold-deep:#B9822F;
+    --rust:#B5562E;
+    --olive:#6B7248;
+    --burgundy:#7A2E24;
+    --parchment:#F1E4C3;
+    --parchment-2:#E7D3A3;
+    --ink:#2C1D14;
+    --ink-soft:#7A6A54;
+    --line:#D3BC8C;
+    --cream:#FBF3E1;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:#15100B;
+    font-family:'Work Sans',sans-serif;
+    color:var(--ink);
+    padding:48px 0 120px;
+  }
+  /* paper grain */
+  .grain{
+    position:absolute; inset:0; pointer-events:none; opacity:.5; mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  }
+  .board-label{
+    color:#9C8C74;
+    font-family:'Courier Prime',monospace;
+    font-size:12px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    text-align:center;
+    margin-bottom:36px;
+  }
+  .board{ display:flex; flex-direction:column; gap:64px; align-items:center; }
+  .frame-wrap{ display:flex; flex-direction:column; align-items:flex-start; gap:14px; }
+  .mile-tag{ display:flex; align-items:center; gap:10px; font-family:'Courier Prime',monospace; font-size:12px; color:#B3A48A; letter-spacing:.04em; }
+  .mile-badge{ background:var(--gold); color:var(--espresso); font-weight:700; padding:3px 9px; border-radius:4px; font-size:11px; }
+  .frame{
+    width:1440px; max-width:92vw; background:var(--parchment); border-radius:6px;
+    overflow:hidden; box-shadow:0 40px 80px -30px rgba(0,0,0,.65); position:relative;
+  }
+  .frame.mobile{ width:390px; }
+
+  h1,h2,h3{ font-family:'Fraunces',serif; margin:0; }
+  .eyebrow{
+    font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--rust); display:flex; align-items:center; gap:8px;
+  }
+  .eyebrow::before{ content:''; width:18px; height:1.5px; background:var(--rust); display:inline-block; }
+  .btn{
+    font-family:'Fraunces',serif; font-weight:600; font-size:15px; border:none; border-radius:8px;
+    padding:13px 26px; cursor:pointer;
+  }
+  .btn-primary{ background:var(--espresso); color:var(--cream); }
+  .btn-accent{ background:var(--gold); color:var(--espresso); }
+  .btn-ghost{ background:transparent; border:1.5px solid var(--ink); color:var(--ink); }
+
+  .shield{ width:34px;height:34px;border-radius:50%; display:flex;align-items:center;justify-content:center; flex-shrink:0; font-size:15px; border:2px solid var(--parchment); box-shadow:0 0 0 1px var(--ink);}
+  .shield.fastest{ background:var(--espresso-2); color:#fff; }
+  .shield.scenic{ background:var(--olive); color:#fff; }
+  .shield.food{ background:var(--rust); color:#fff; }
+  .shield.backroads{ background:var(--gold-deep); color:#fff; }
+  .shield.budget{ background:var(--burgundy); color:#fff; }
+
+  /* ============ FRAME 1 — LANDING ============ */
+  .landing-nav{ display:flex; justify-content:space-between; align-items:center; padding:26px 56px; background:var(--espresso); color:var(--cream); position:relative; z-index:2;}
+  .logo{ font-family:'Fraunces',serif; font-weight:600; font-size:21px; letter-spacing:.01em; display:flex; align-items:center; gap:9px;}
+  .logo .dot{ width:9px;height:9px;background:var(--gold); border-radius:50%; }
+  .nav-links{ display:flex; gap:32px; align-items:center; font-size:14px; }
+  .nav-links a{ color:#D8C7A8; text-decoration:none; }
+
+  .hero{ background:var(--espresso); color:var(--cream); padding:88px 56px 100px; position:relative; overflow:hidden; }
+  .hero-inner{ max-width:620px; position:relative; z-index:2; }
+  .hero h1{ font-size:56px; line-height:1.06; margin:16px 0 20px; font-weight:600; }
+  .hero h1 em{ font-style:italic; color:var(--gold); }
+  .hero p{ font-size:16.5px; color:#D8C7A8; max-width:480px; line-height:1.6; margin-bottom:34px; font-family:'Work Sans'; }
+  .trip-builder{ background:#2E1C12; padding:16px; border-radius:12px; max-width:560px; border:1px solid #5A4128; }
+  .tb-row{ display:flex; align-items:center; gap:10px; padding:6px 4px; }
+  .tb-dot{ width:9px;height:9px;border-radius:50%; background:var(--gold); flex-shrink:0; }
+  .tb-dot.end{ background:var(--rust); }
+  .tb-dot.mid{ background:transparent; border:1.5px solid #8A7458; }
+  .tb-line{ width:1.5px; height:22px; background:#5A4128; margin-left:4px; }
+  .tb-row input{ flex:1; background:transparent; border:none; color:var(--cream); font-family:'Work Sans'; font-size:14.5px; padding:8px 10px; outline:none; }
+  .tb-row input::placeholder{ color:#8A7458; }
+  .add-stop{ font-family:'Courier Prime',monospace; font-size:11.5px; color:var(--gold); background:none; border:none; cursor:pointer; padding:6px 10px; text-align:left; }
+  .tb-cta{ width:100%; margin-top:8px; padding:13px; font-size:14px; }
+
+  .route-types{ background:var(--parchment); padding:60px 56px; display:grid; grid-template-columns:repeat(5,1fr); gap:18px; position:relative; z-index:2;}
+  .rt-card{ background:var(--cream); border:1px solid var(--line); border-radius:12px; padding:20px; }
+  .rt-card h3{ font-size:16px; margin:12px 0 6px; font-weight:600; }
+  .rt-card p{ font-size:12.5px; color:var(--ink-soft); line-height:1.5; margin:0; font-family:'Work Sans'; }
+
+  /* ============ FRAME 2 — TRIP INPUT ============ */
+  .input-screen{ padding:60px 80px; }
+  .input-screen h2{ font-size:36px; margin-bottom:30px; font-weight:600; }
+  .input-grid{ display:grid; grid-template-columns:1.15fr .85fr; gap:40px; align-items:stretch; }
+  .stop-list{ background:var(--cream); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:22px; }
+  .stop-row{ display:flex; align-items:center; gap:12px; padding:9px 4px; }
+  .stop-row input{ flex:1; border:none; background:transparent; font-family:'Work Sans'; font-size:14.5px; color:var(--ink); outline:none; border-bottom:1px solid var(--line); padding:6px 2px;}
+  .stop-connector{ width:1.5px; height:18px; background:var(--line); margin-left:5px; }
+  .add-stop-2{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--rust); background:none; border:none; cursor:pointer; padding:8px 2px; }
+  .field-label{ font-family:'Courier Prime',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); margin-bottom:8px; display:block; }
+
+  /* guide chat panel */
+  .guide-panel{ background:var(--espresso); border-radius:14px; padding:24px; display:flex; flex-direction:column; }
+  .guide-head{ display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .guide-avatar{ width:42px; height:42px; border-radius:50%; background:var(--gold); display:flex; align-items:center; justify-content:center; font-size:19px; flex-shrink:0; }
+  .guide-panel h3{ color:var(--cream); font-size:17px; font-weight:600; margin:0; }
+  .guide-sub{ color:#B3A48A; font-size:12px; font-family:'Work Sans'; margin:3px 0 0; }
+  .chat-thread{ display:flex; flex-direction:column; gap:10px; margin-bottom:16px; }
+  .msg{ font-family:'Work Sans'; font-size:13.5px; line-height:1.5; padding:11px 14px; border-radius:12px; max-width:85%; }
+  .msg.guide{ background:#2E1C12; color:#E4D3B4; align-self:flex-start; border-bottom-left-radius:3px; }
+  .msg.user{ background:var(--gold); color:var(--espresso); align-self:flex-end; border-bottom-right-radius:3px; font-weight:500; }
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .chip{ background:transparent; border:1.3px solid #7A6449; color:var(--gold); font-family:'Courier Prime',monospace; font-size:11.5px; padding:7px 13px; border-radius:20px; cursor:pointer; }
+
+  /* live map panel */
+  .live-map-panel{ background:var(--cream); border:1.5px solid var(--line); border-radius:14px; padding:18px; display:flex; flex-direction:column; }
+  .live-tag{ display:flex; align-items:center; gap:8px; font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--rust); margin-bottom:12px; }
+  .live-dot{ width:8px; height:8px; border-radius:50%; background:var(--rust); box-shadow:0 0 0 4px rgba(181,86,46,.2); }
+  .mini-map{ position:relative; height:260px; background:var(--parchment-2); border-radius:10px; overflow:hidden; border:1px solid var(--line); margin-bottom:12px; }
+  .mini-map svg:first-child{ width:100%; height:100%; }
+  .mini-map .compass{ top:10px; right:10px; }
+  .live-caption{ font-family:'Work Sans'; font-size:12.5px; color:var(--ink-soft); margin:0 0 14px; }
+
+  /* ============ FRAME 3 — MAP RESULTS (NEW) ============ */
+  .results-header{ display:flex; justify-content:space-between; align-items:flex-end; padding:36px 56px 20px; }
+  .results-header h2{ font-size:29px; font-weight:600; }
+  .results-header .sub{ font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink-soft); margin-top:6px; }
+  .pill-row{ display:flex; gap:10px; padding:0 56px 20px; flex-wrap:wrap; }
+  .pill{ display:flex; align-items:center; gap:8px; background:var(--cream); border:1.5px solid var(--line); border-radius:30px; padding:8px 16px 8px 8px; font-size:13px; cursor:pointer; font-family:'Work Sans'; color:var(--ink-soft); }
+  .pill.active{ border-color:var(--espresso); background:var(--espresso); color:var(--cream); }
+  .pill .shield{ width:24px;height:24px; font-size:11px; box-shadow:none; border:none; }
+  .pill b{ color:inherit; font-family:'Courier Prime',monospace; font-weight:400; font-size:11.5px; }
+
+  .map-wrap{ margin:0 56px 28px; border-radius:14px; overflow:hidden; border:1px solid var(--line); position:relative; }
+  .map-area{ height:420px; background:var(--parchment-2); position:relative; }
+  .map-area svg{ width:100%; height:100%; }
+  .compass{ position:absolute; top:20px; right:20px; width:76px; height:76px; filter:drop-shadow(0 4px 8px rgba(0,0,0,.25)); }
+  .map-legend{ position:absolute; bottom:16px; left:18px; background:rgba(251,243,225,.92); border:1px solid var(--line); border-radius:8px; padding:10px 14px; font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-soft); display:flex; gap:14px; }
+  .legend-item{ display:flex; align-items:center; gap:6px; }
+  .legend-dot{ width:8px;height:8px;border-radius:50%; }
+  .map-scale{ position:absolute; bottom:16px; right:20px; font-family:'Courier Prime',monospace; font-size:10.5px; letter-spacing:.05em; color:var(--ink-soft); background:rgba(251,243,225,.92); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+
+  .selected-strip{ display:flex; gap:24px; padding:0 56px 48px; align-items:stretch; }
+  .selected-card{ background:var(--cream); border:1.5px solid var(--espresso); border-radius:12px; padding:22px 26px; flex:1; display:flex; justify-content:space-between; align-items:center; }
+  .selected-stats{ display:flex; gap:34px; font-family:'Courier Prime',monospace; }
+  .selected-stats div span{ display:block; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+  .selected-stats div b{ font-size:18px; color:var(--ink); font-family:'Fraunces'; font-weight:600; }
+
+  /* ============ FRAME 4 — ITINERARY ============ */
+  .itin{ padding:46px 56px 60px; display:grid; grid-template-columns:1fr 340px; gap:36px; }
+  .day-block{ margin-bottom:26px; }
+  .day-head{ display:flex; align-items:center; gap:12px; margin-bottom:13px; }
+  .day-num{ font-family:'Courier Prime',monospace; background:var(--espresso); color:var(--gold); padding:4px 10px; border-radius:6px; font-size:12px; }
+  .stop-card{ display:flex; gap:14px; background:var(--cream); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:10px; }
+  .stop-thumb{ width:64px; height:64px; border-radius:8px; background:var(--parchment-2); flex-shrink:0; }
+  .stop-info h4{ margin:0 0 4px; font-family:'Fraunces'; font-size:15px; font-weight:600; }
+  .stop-info p{ margin:0; font-size:12px; color:var(--ink-soft); font-family:'Work Sans';}
+  .chat-box{ background:var(--espresso); border-radius:14px; padding:20px; color:var(--cream); position:sticky; top:20px; }
+  .chat-box .eyebrow{ color:var(--gold); margin-bottom:12px;}
+  .chat-box .eyebrow::before{ background:var(--gold); }
+  .chat-msg{ background:#2E1C12; border-radius:10px; padding:10px 12px; font-size:12.5px; margin-bottom:8px; color:#E4D3B4; font-family:'Work Sans';}
+  .chat-input{ display:flex; gap:8px; margin-top:12px; }
+  .chat-input input{ flex:1; background:#2E1C12; border:none; border-radius:8px; padding:10px; color:#fff; font-size:12.5px; }
+
+  .components{ padding:46px 56px; display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start; }
+  .comp-group h4{ font-family:'Courier Prime',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); margin-bottom:12px; }
+  .shield-row{ display:flex; gap:10px; }
+
+  .mobile .results-header{ flex-direction:column; align-items:flex-start; gap:6px; padding:22px 20px 14px;}
+  .mobile .pill-row{ padding:0 20px 16px; }
+  .mobile .map-wrap{ margin:0 20px 20px; }
+  .mobile .map-area{ height:260px; }
+  .mobile .selected-strip{ padding:0 20px 28px; flex-direction:column; }
+  .mobile .selected-stats{ gap:20px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+
+<div class="board-label">WAYPOINT — ROUTE PLANNER · DESIGN BOARD v2 · AUTUMN HARVEST</div>
+
+<div class="board">
+
+  <!-- FRAME 1: LANDING -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 1</span> Landing</div>
+    <div class="frame">
+      <nav class="landing-nav">
+        <div class="logo"><span class="dot"></span>Waypoint</div>
+        <div class="nav-links"><a href="#">How it works</a><a href="#">Route types</a><a href="#">Sign in</a></div>
+      </nav>
+      <section class="hero">
+        <div class="grain"></div>
+        <div class="hero-inner">
+          <div class="eyebrow" style="color:var(--gold)">FIVE ROUTES, ONE TRIP</div>
+          <h1>Choose <em>how</em><br>you travel</h1>
+          <p>Same start, same finish — five entirely different roads. Add as many stops as you like, then pick the way there that fits the trip you're actually taking.</p>
+          <div class="trip-builder">
+            <div class="tb-row"><span class="tb-dot"></span><input placeholder="From — Chicago, IL"></div>
+            <div class="tb-line"></div>
+            <div class="tb-row"><span class="tb-dot mid"></span><input placeholder="Add a stop along the way — optional"></div>
+            <div class="tb-line"></div>
+            <div class="tb-row"><span class="tb-dot end"></span><input placeholder="To — Denver, CO"></div>
+            <button class="add-stop">+ Add another stop</button>
+            <button class="btn btn-accent tb-cta">Plan This Trip</button>
+          </div>
+        </div>
+      </section>
+      <section class="route-types">
+        <div class="rt-card"><div class="shield fastest">⚡</div><h3>Fastest</h3><p>Least time behind the wheel, highway-first.</p></div>
+        <div class="rt-card"><div class="shield scenic">⛰</div><h3>Scenic</h3><p>Elevation, overlooks, byways over interstates.</p></div>
+        <div class="rt-card"><div class="shield food">🍴</div><h3>Diners &amp; Stops</h3><p>Routed through the highest density of local spots.</p></div>
+        <div class="rt-card"><div class="shield backroads">🛤</div><h3>Backroads Only</h3><p>Avoids interstates entirely, two-lane the whole way.</p></div>
+        <div class="rt-card"><div class="shield budget">⛽</div><h3>Cheapest Gas</h3><p>Optimized for lowest total fuel spend.</p></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- FRAME 2: TRIP INPUT -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 2</span> Trip Input</div>
+    <div class="frame">
+      <div class="input-screen">
+        <div class="eyebrow">STEP 1 OF 2</div>
+        <h2>Plan it with your guide</h2>
+        <div class="input-grid">
+          <div class="guide-panel">
+            <div class="guide-head">
+              <div class="guide-avatar">🧭</div>
+              <div>
+                <h3>Your Travel Guide</h3>
+                <p class="guide-sub">Tell me what you're after — I'll sketch it on the map as we talk.</p>
+              </div>
+            </div>
+            <div class="chat-thread">
+              <div class="msg guide">Where are we headed, and what's the trip you're after?</div>
+              <div class="msg user">Chicago to Denver, maybe a stop in Springfield. 3 days, want to avoid highways.</div>
+              <div class="msg guide">Got it — routing you off the interstates through Springfield. Lean scenic, or keep it efficient?</div>
+              <div class="msg user">Scenic, and find us some good diners on the way.</div>
+              <div class="msg guide">Updating the map now — found 6 diners and 3 viewpoints on a backroads route through Springfield. Take a look →</div>
+            </div>
+            <div class="chip-row">
+              <button class="chip">Make it more scenic</button>
+              <button class="chip">Add a BBQ stop</button>
+              <button class="chip">Avoid highways</button>
+              <button class="chip">Keep it under 3 days</button>
+            </div>
+            <div class="chat-input"><input placeholder="Tell your guide what you want…"><button class="btn btn-accent" style="padding:10px 16px;">Send</button></div>
+          </div>
+
+          <div class="live-map-panel">
+            <div class="live-tag"><span class="live-dot"></span>Live — updating from your last message</div>
+            <div class="mini-map">
+              <svg viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+                <path d="M120,90 C 180,70 260,55 340,60 C 400,50 470,45 540,55 C 610,45 670,55 715,95
+                         C 745,80 780,90 800,120 C 830,110 860,130 855,160 C 880,175 875,205 850,215
+                         C 865,240 845,260 815,255 C 820,285 795,300 770,290 C 780,320 755,335 730,320
+                         C 745,360 715,385 690,365 C 700,410 670,435 645,410 C 655,455 620,470 600,445
+                         C 580,480 545,470 535,440 C 500,455 470,435 475,405 C 435,415 405,390 415,360
+                         C 375,365 350,335 365,305 C 325,300 305,265 325,235 C 285,220 275,185 305,165
+                         C 270,150 265,115 300,100 C 260,105 225,95 220,65 C 190,75 155,70 140,50
+                         C 120,60 105,80 120,90 Z"
+                      fill="#DDC79A" stroke="#5A4128" stroke-width="3" stroke-linejoin="round"/>
+                <path d="M405,360 C420,395 450,420 460,450 C445,470 415,465 400,440 C380,450 365,430 375,405 C365,385 385,365 405,360 Z" fill="#DDC79A" stroke="#5A4128" stroke-width="3"/>
+                <path d="M780,290 C800,310 815,345 800,375 C790,360 778,340 778,320 C765,315 762,295 780,290 Z" fill="#DDC79A" stroke="#5A4128" stroke-width="3"/>
+                <path d="M560,220 C520,235 480,240 460,255 C440,270 425,285 415,305" fill="none" stroke="#4A2E1C" stroke-width="5" stroke-linecap="round" stroke-dasharray="0.1 14"/>
+                <circle cx="560" cy="220" r="9" fill="#B5562E" stroke="#3A2418" stroke-width="2"/>
+                <text x="575" y="216" font-family="Courier Prime" font-size="15" fill="#3A2418">Chicago</text>
+                <circle cx="415" cy="305" r="9" fill="#D9A441" stroke="#3A2418" stroke-width="2"/>
+                <text x="345" y="330" font-family="Courier Prime" font-size="15" fill="#3A2418">Denver</text>
+                <circle cx="500" cy="248" r="5" fill="#6B7248"/>
+                <circle cx="450" cy="270" r="5" fill="#B5562E"/>
+              </svg>
+              <svg class="compass" style="width:48px;height:48px;" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="42" fill="#FBF3E1" stroke="#4A2E1C" stroke-width="2"/>
+                <path d="M50,14 L58,50 L50,86 L42,50 Z" fill="#B5562E"/>
+                <path d="M14,50 L50,42 L86,50 L50,58 Z" fill="#4A2E1C"/>
+                <text x="50" y="26" text-anchor="middle" font-family="Fraunces" font-weight="600" font-size="13" fill="#3A2418">N</text>
+              </svg>
+            </div>
+            <p class="live-caption">6 diners · 3 viewpoints found along this route</p>
+            <button class="btn btn-primary" style="width:100%;">See all 5 routes →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRAME 3: MAP RESULTS (NEW) -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 3</span> Trip Result — Map</div>
+    <div class="frame">
+      <div class="results-header">
+        <div>
+          <h2>Chicago → Springfield → Denver</h2>
+          <div class="sub">5 ROUTES PLOTTED · 3-DAY TRIP</div>
+        </div>
+        <button class="btn btn-ghost">Edit stops</button>
+      </div>
+
+      <div class="pill-row">
+        <div class="pill active"><span class="shield fastest">⚡</span>Fastest <b>14h20</b></div>
+        <div class="pill"><span class="shield scenic">⛰</span>Scenic <b>18h05</b></div>
+        <div class="pill"><span class="shield food">🍴</span>Diners <b>16h40</b></div>
+        <div class="pill"><span class="shield backroads">🛤</span>Backroads <b>21h15</b></div>
+        <div class="pill"><span class="shield budget">⛽</span>Cheapest <b>15h50</b></div>
+      </div>
+
+      <div class="map-wrap">
+        <div class="map-area">
+          <div class="grain" style="opacity:.28;"></div>
+          <svg viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <pattern id="graticule" width="60" height="60" patternUnits="userSpaceOnUse">
+                <path d="M60,0 L0,0 0,60" fill="none" stroke="#C4A96F" stroke-width="0.6" opacity="0.5"/>
+              </pattern>
+            </defs>
+            <!-- ocean / page backdrop -->
+            <rect x="0" y="0" width="1000" height="600" fill="url(#graticule)"/>
+
+            <!-- continental US, simplified rustic outline -->
+            <path d="M120,90
+                     C 180,70 260,55 340,60
+                     C 400,50 470,45 540,55
+                     C 610,45 670,55 715,95
+                     C 745,80 780,90 800,120
+                     C 830,110 860,130 855,160
+                     C 880,175 875,205 850,215
+                     C 865,240 845,260 815,255
+                     C 820,285 795,300 770,290
+                     C 780,320 755,335 730,320
+                     C 745,360 715,385 690,365
+                     C 700,410 670,435 645,410
+                     C 655,455 620,470 600,445
+                     C 580,480 545,470 535,440
+                     C 500,455 470,435 475,405
+                     C 435,415 405,390 415,360
+                     C 375,365 350,335 365,305
+                     C 325,300 305,265 325,235
+                     C 285,220 275,185 305,165
+                     C 270,150 265,115 300,100
+                     C 260,105 225,95 220,65
+                     C 190,75 155,70 140,50
+                     C 120,60 105,80 120,90 Z"
+                  fill="#DDC79A" stroke="#5A4128" stroke-width="3" stroke-linejoin="round" opacity="0.95"/>
+
+            <!-- Texas-ish bulge + Florida-ish peninsula for character -->
+            <path d="M405,360 C420,395 450,420 460,450 C445,470 415,465 400,440 C380,450 365,430 375,405 C365,385 385,365 405,360 Z"
+                  fill="#DDC79A" stroke="#5A4128" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M780,290 C800,310 815,345 800,375 C790,360 778,340 778,320 C765,315 762,295 780,290 Z"
+                  fill="#DDC79A" stroke="#5A4128" stroke-width="3" stroke-linejoin="round"/>
+
+            <!-- faint internal "state line" scratches for atlas character -->
+            <g stroke="#B99B65" stroke-width="1" opacity="0.55" fill="none">
+              <path d="M300,120 L300,300"/>
+              <path d="M380,110 L380,330"/>
+              <path d="M460,100 L460,360"/>
+              <path d="M540,100 L540,380"/>
+              <path d="M620,110 L620,340"/>
+              <path d="M220,180 L780,180"/>
+              <path d="M240,260 L720,260"/>
+            </g>
+
+            <!-- little mountain glyphs (Rockies, west) -->
+            <g fill="#8A6E45" opacity="0.8">
+              <path d="M300,220 l14,-22 10,14 14,-24 12,32 z"/>
+              <path d="M320,255 l12,-18 9,12 12,-20 10,26 z"/>
+            </g>
+            <!-- little tree tufts (east/midwest) -->
+            <g fill="#6B7248" opacity="0.75">
+              <circle cx="620" cy="230" r="6"/><circle cx="632" cy="234" r="5"/>
+              <circle cx="650" cy="300" r="6"/><circle cx="662" cy="296" r="5"/>
+            </g>
+
+            <!-- faint alternate routes -->
+            <path d="M560,220 C500,240 460,255 415,270 C390,285 400,300 415,305" fill="none" stroke="#8A6E45" stroke-width="2.5" stroke-dasharray="1 9" opacity="0.7"/>
+            <path d="M560,220 C520,260 470,290 440,300 C420,300 415,305 415,305" fill="none" stroke="#8A6E45" stroke-width="2.5" stroke-dasharray="1 9" opacity="0.7"/>
+
+            <!-- selected route: fastest, bold, hand-marked -->
+            <path d="M560,220 C520,235 480,240 460,255 C440,270 425,285 415,305" fill="none" stroke="#4A2E1C" stroke-width="5" stroke-linecap="round" stroke-dasharray="0.1 14" opacity="0.95"/>
+
+            <!-- start / mid / end pins -->
+            <circle cx="560" cy="220" r="9" fill="#B5562E" stroke="#3A2418" stroke-width="2"/>
+            <text x="575" y="216" font-family="Courier Prime" font-size="13" fill="#3A2418">Chicago</text>
+            <circle cx="415" cy="305" r="9" fill="#D9A441" stroke="#3A2418" stroke-width="2"/>
+            <text x="345" y="330" font-family="Courier Prime" font-size="13" fill="#3A2418">Denver</text>
+
+            <!-- POI markers -->
+            <circle cx="500" cy="248" r="5" fill="#6B7248"/>
+            <circle cx="450" cy="270" r="5" fill="#B5562E"/>
+          </svg>
+
+          <svg class="compass" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="42" fill="#FBF3E1" stroke="#4A2E1C" stroke-width="2" opacity="0.9"/>
+            <circle cx="50" cy="50" r="34" fill="none" stroke="#4A2E1C" stroke-width="1" opacity="0.5"/>
+            <g stroke="#4A2E1C" stroke-width="1" opacity="0.6">
+              <line x1="50" y1="10" x2="50" y2="90"/>
+              <line x1="10" y1="50" x2="90" y2="50"/>
+              <line x1="20" y1="20" x2="80" y2="80"/>
+              <line x1="80" y1="20" x2="20" y2="80"/>
+            </g>
+            <path d="M50,14 L58,50 L50,86 L42,50 Z" fill="#B5562E" opacity="0.9"/>
+            <path d="M14,50 L50,42 L86,50 L50,58 Z" fill="#4A2E1C" opacity="0.85"/>
+            <text x="50" y="26" text-anchor="middle" font-family="Fraunces" font-weight="600" font-size="13" fill="#3A2418">N</text>
+            <text x="50" y="80" text-anchor="middle" font-family="Fraunces" font-size="10" fill="#3A2418">S</text>
+            <text x="18" y="54" text-anchor="middle" font-family="Fraunces" font-size="10" fill="#3A2418">W</text>
+            <text x="82" y="54" text-anchor="middle" font-family="Fraunces" font-size="10" fill="#3A2418">E</text>
+          </svg>
+
+          <div class="map-legend">
+            <div class="legend-item"><span class="legend-dot" style="background:#6B7248"></span>Viewpoint</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#B5562E"></span>Diner</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#D9A441"></span>Start</div>
+          </div>
+          <div class="map-scale">SCALE — 0 &nbsp; 100 &nbsp; 200 MI</div>
+        </div>
+      </div>
+
+      <div class="selected-strip">
+        <div class="selected-card">
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div class="shield fastest" style="width:44px;height:44px;font-size:19px;">⚡</div>
+            <div><h3 style="font-size:19px;font-weight:600;">Fastest Route</h3><p style="margin:2px 0 0;color:var(--ink-soft);font-size:12.5px;font-family:'Work Sans'">via I-80 W</p></div>
+          </div>
+          <div class="selected-stats">
+            <div><span>Drive time</span><b>14h 20m</b></div>
+            <div><span>Distance</span><b>1,003 mi</b></div>
+            <div><span>Est. gas</span><b>$118</b></div>
+            <div><span>Stops found</span><b>2 diners</b></div>
+          </div>
+          <button class="btn btn-primary">View itinerary →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRAME 4: ITINERARY -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 4</span> Trip Detail</div>
+    <div class="frame">
+      <div class="itin">
+        <div>
+          <div class="eyebrow">FASTEST ROUTE · SELECTED</div>
+          <h2 style="font-size:27px;margin:12px 0 24px;font-weight:600;">Day-by-day</h2>
+          <div class="day-block">
+            <div class="day-head"><span class="day-num">DAY 1</span><span style="font-size:13px;color:var(--ink-soft);font-family:'Work Sans'">Chicago → Omaha · 6h 40m</span></div>
+            <div class="stop-card"><div class="stop-thumb"></div><div class="stop-info"><h4>The Alamo Motel</h4><p>Near your route · pet-friendly · pool</p></div></div>
+          </div>
+          <div class="day-block">
+            <div class="day-head"><span class="day-num">DAY 2</span><span style="font-size:13px;color:var(--ink-soft);font-family:'Work Sans'">Omaha → North Platte · 5h 10m</span></div>
+            <div class="stop-card"><div class="stop-thumb"></div><div class="stop-info"><h4>Prairie View Campground</h4><p>Highly rated · quiet, off the interstate</p></div></div>
+          </div>
+          <div class="day-block">
+            <div class="day-head"><span class="day-num">DAY 3</span><span style="font-size:13px;color:var(--ink-soft);font-family:'Work Sans'">North Platte → Denver · 6h 15m</span></div>
+            <div class="stop-card"><div class="stop-thumb"></div><div class="stop-info"><h4>Rosie's Diner</h4><p>Lunch stop · local favorite, 4.8★</p></div></div>
+          </div>
+        </div>
+        <div class="chat-box">
+          <div class="eyebrow">REFINE YOUR TRIP</div>
+          <div class="chat-msg">Swap day 2's stay for something with a pool.</div>
+          <div class="chat-msg">Done — swapped Prairie View for Elmwood RV Resort, 2 miles off-route, pool on site.</div>
+          <div class="chat-input"><input placeholder="Tell Waypoint what to change…"><button class="btn btn-accent" style="padding:10px 16px;">Send</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRAME 5: MOBILE -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 5</span> Mobile — Map Results</div>
+    <div class="frame mobile">
+      <div class="results-header">
+        <div><h2 style="font-size:20px;font-weight:600;">Chicago → Denver</h2><div class="sub">5 ROUTES · 3-DAY TRIP</div></div>
+      </div>
+      <div class="pill-row">
+        <div class="pill active"><span class="shield fastest">⚡</span><b>14h20</b></div>
+        <div class="pill"><span class="shield scenic">⛰</span><b>18h05</b></div>
+        <div class="pill"><span class="shield food">🍴</span><b>16h40</b></div>
+      </div>
+      <div class="map-wrap">
+        <div class="map-area">
+          <div class="grain" style="opacity:.28;"></div>
+          <svg viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+            <rect x="0" y="0" width="1000" height="600" fill="url(#graticule)"/>
+            <path d="M120,90 C 180,70 260,55 340,60 C 400,50 470,45 540,55 C 610,45 670,55 715,95
+                     C 745,80 780,90 800,120 C 830,110 860,130 855,160 C 880,175 875,205 850,215
+                     C 865,240 845,260 815,255 C 820,285 795,300 770,290 C 780,320 755,335 730,320
+                     C 745,360 715,385 690,365 C 700,410 670,435 645,410 C 655,455 620,470 600,445
+                     C 580,480 545,470 535,440 C 500,455 470,435 475,405 C 435,415 405,390 415,360
+                     C 375,365 350,335 365,305 C 325,300 305,265 325,235 C 285,220 275,185 305,165
+                     C 270,150 265,115 300,100 C 260,105 225,95 220,65 C 190,75 155,70 140,50
+                     C 120,60 105,80 120,90 Z"
+                  fill="#DDC79A" stroke="#5A4128" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M405,360 C420,395 450,420 460,450 C445,470 415,465 400,440 C380,450 365,430 375,405 C365,385 385,365 405,360 Z" fill="#DDC79A" stroke="#5A4128" stroke-width="3"/>
+            <path d="M780,290 C800,310 815,345 800,375 C790,360 778,340 778,320 C765,315 762,295 780,290 Z" fill="#DDC79A" stroke="#5A4128" stroke-width="3"/>
+            <path d="M560,220 C520,235 480,240 460,255 C440,270 425,285 415,305" fill="none" stroke="#4A2E1C" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 14"/>
+            <circle cx="560" cy="220" r="10" fill="#B5562E" stroke="#3A2418" stroke-width="2"/>
+            <circle cx="415" cy="305" r="10" fill="#D9A441" stroke="#3A2418" stroke-width="2"/>
+          </svg>
+          <svg class="compass" viewBox="0 0 100 100" style="width:56px;height:56px;">
+            <circle cx="50" cy="50" r="42" fill="#FBF3E1" stroke="#4A2E1C" stroke-width="2"/>
+            <path d="M50,14 L58,50 L50,86 L42,50 Z" fill="#B5562E"/>
+            <path d="M14,50 L50,42 L86,50 L50,58 Z" fill="#4A2E1C"/>
+            <text x="50" y="26" text-anchor="middle" font-family="Fraunces" font-weight="600" font-size="13" fill="#3A2418">N</text>
+          </svg>
+        </div>
+      </div>
+      <div class="selected-strip">
+        <div class="selected-card" style="flex-direction:column;align-items:flex-start;gap:14px;">
+          <div style="display:flex;align-items:center;gap:12px;"><div class="shield fastest">⚡</div><h3 style="font-size:17px;font-weight:600;">Fastest Route</h3></div>
+          <div class="selected-stats"><div><span>Time</span><b>14h20</b></div><div><span>Cost</span><b>$118</b></div></div>
+          <button class="btn btn-primary" style="width:100%;">View itinerary →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPONENT STRIP -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">REF</span> Component Library</div>
+    <div class="frame" style="background:var(--cream);">
+      <div class="components">
+        <div class="comp-group"><h4>Route Shields</h4><div class="shield-row">
+          <div class="shield fastest">⚡</div><div class="shield scenic">⛰</div><div class="shield food">🍴</div><div class="shield backroads">🛤</div><div class="shield budget">⛽</div>
+        </div></div>
+        <div class="comp-group"><h4>Buttons</h4><div style="display:flex;gap:10px;">
+          <button class="btn btn-primary">Primary</button><button class="btn btn-accent">Accent</button><button class="btn btn-ghost">Ghost</button>
+        </div></div>
+        <div class="comp-group"><h4>Autumn Harvest Palette</h4><div style="display:flex;gap:8px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:#3A2418"></div>
+          <div style="width:36px;height:36px;border-radius:8px;background:#D9A441"></div>
+          <div style="width:36px;height:36px;border-radius:8px;background:#B5562E"></div>
+          <div style="width:36px;height:36px;border-radius:8px;background:#6B7248"></div>
+          <div style="width:36px;height:36px;border-radius:8px;background:#7A2E24"></div>
+          <div style="width:36px;height:36px;border-radius:8px;background:#F1E4C3;border:1px solid #ddd"></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

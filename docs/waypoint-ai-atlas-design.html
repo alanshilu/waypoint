@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Waypoint AI Atlas — Design Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --espresso:#3A2418; --espresso-2:#4A2E1C;
+    --gold:#D9A441; --gold-deep:#B9822F;
+    --rust:#B5562E; --olive:#6B7248; --burgundy:#7A2E24;
+    --parchment:#F1E4C3; --parchment-2:#E7D3A3;
+    --ink:#2C1D14; --ink-soft:#7A6A54; --line:#D3BC8C; --cream:#FBF3E1;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:#15100B; font-family:'Work Sans',sans-serif; color:var(--ink); padding:48px 0 120px; }
+  .board-label{ color:#9C8C74; font-family:'Courier Prime',monospace; font-size:12px; letter-spacing:.1em; text-transform:uppercase; text-align:center; margin-bottom:36px; }
+  .board{ display:flex; flex-direction:column; gap:64px; align-items:center; }
+  .frame-wrap{ display:flex; flex-direction:column; align-items:flex-start; gap:14px; }
+  .mile-tag{ display:flex; align-items:center; gap:10px; font-family:'Courier Prime',monospace; font-size:12px; color:#B3A48A; }
+  .mile-badge{ background:var(--gold); color:var(--espresso); font-weight:700; padding:3px 9px; border-radius:4px; font-size:11px; }
+  .frame{ width:1440px; max-width:92vw; background:var(--parchment); border-radius:6px; overflow:hidden; box-shadow:0 40px 80px -30px rgba(0,0,0,.65); position:relative; }
+  .frame.mobile{ width:390px; }
+  h1,h2,h3{ font-family:'Fraunces',serif; margin:0; }
+  .eyebrow{ font-family:'Courier Prime',monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--rust); display:flex; align-items:center; gap:8px; }
+  .eyebrow::before{ content:''; width:18px; height:1.5px; background:var(--rust); display:inline-block; }
+  .btn{ font-family:'Fraunces',serif; font-weight:600; font-size:15px; border:none; border-radius:8px; padding:13px 26px; cursor:pointer; }
+  .btn-primary{ background:var(--espresso); color:var(--cream); }
+  .btn-accent{ background:var(--gold); color:var(--espresso); }
+  .btn-ghost{ background:transparent; border:1.5px solid var(--ink); color:var(--ink); }
+  .grain{ position:absolute; inset:0; pointer-events:none; opacity:.5; mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"); }
+
+  /* ===== FRAME 1: PROMPT LANDING ===== */
+  .nav{ display:flex; justify-content:space-between; align-items:center; padding:26px 56px; background:var(--espresso); color:var(--cream); }
+  .logo{ font-family:'Fraunces',serif; font-weight:600; font-size:20px; display:flex; align-items:center; gap:9px; }
+  .logo .dot{ width:9px;height:9px;background:var(--gold); border-radius:50%; }
+  .prompt-hero{ background:var(--espresso); color:var(--cream); padding:90px 56px 110px; text-align:center; position:relative; overflow:hidden; }
+  .prompt-hero h1{ font-size:50px; line-height:1.1; max-width:760px; margin:16px auto 18px; font-weight:600; }
+  .prompt-hero h1 em{ color:var(--gold); font-style:italic; }
+  .prompt-hero p{ color:#D8C7A8; font-size:16px; max-width:520px; margin:0 auto 40px; }
+  .prompt-box{ max-width:720px; margin:0 auto; background:#2E1C12; border:1px solid #5A4128; border-radius:14px; padding:20px; text-align:left; }
+  .prompt-box textarea{ width:100%; min-height:64px; background:transparent; border:none; color:var(--cream); font-family:'Work Sans'; font-size:15.5px; resize:none; outline:none; }
+  .prompt-box textarea::placeholder{ color:#8A7458; }
+  .prompt-actions{ display:flex; justify-content:space-between; align-items:center; margin-top:12px; }
+  .prompt-hint{ font-family:'Courier Prime',monospace; font-size:11px; color:#8A7458; }
+  .examples{ max-width:760px; margin:26px auto 0; display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+  .ex-chip{ background:#2E1C12; border:1px solid #5A4128; color:#D8C7A8; font-family:'Courier Prime',monospace; font-size:12px; padding:9px 15px; border-radius:20px; cursor:pointer; }
+
+  .gallery{ background:var(--parchment); padding:56px; }
+  .gallery h3{ font-size:14px; font-family:'Courier Prime',monospace; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); margin-bottom:20px; font-weight:400; }
+  .gallery-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:18px; }
+  .gcard{ background:var(--cream); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .gcard-map{ height:110px; background:var(--parchment-2); position:relative; }
+  .gcard-body{ padding:14px; }
+  .gcard-body p{ font-size:12.5px; color:var(--ink-soft); margin:0; font-family:'Work Sans'; }
+
+  /* ===== FRAME 2: GENERATING STATE ===== */
+  .gen-wrap{ background:var(--espresso); min-height:640px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px; position:relative; overflow:hidden; }
+  .gen-recap{ background:#2E1C12; border:1px solid #5A4128; color:#D8C7A8; font-family:'Courier Prime',monospace; font-size:12px; padding:9px 16px; border-radius:20px; margin-bottom:28px; }
+  .gen-map{ width:780px; max-width:90%; height:340px; background:var(--parchment-2); border-radius:14px; border:1px solid #5A4128; position:relative; overflow:hidden; }
+  .gen-status{ margin-top:26px; display:flex; align-items:center; gap:12px; color:var(--cream); font-family:'Fraunces'; font-size:17px; }
+  .gen-dot{ width:9px;height:9px;border-radius:50%; background:var(--gold); animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:.3} 50%{opacity:1} }
+  .gen-steps{ margin-top:18px; display:flex; gap:22px; font-family:'Courier Prime',monospace; font-size:11.5px; color:#8A7458; }
+  .gen-steps span.done{ color:var(--gold); }
+
+  /* ===== FRAME 3: RESULT MAP + EXPORT ===== */
+  .result-header{ display:flex; justify-content:space-between; align-items:flex-end; padding:36px 56px 20px; }
+  .result-header h2{ font-size:27px; font-weight:600; }
+  .prompt-recap{ display:inline-flex; align-items:center; gap:8px; background:var(--cream); border:1px solid var(--line); border-radius:20px; padding:7px 14px 7px 10px; font-family:'Courier Prime',monospace; font-size:11.5px; color:var(--ink-soft); margin-top:8px; }
+  .map-wrap{ margin:0 56px 24px; border-radius:14px; overflow:hidden; border:1px solid var(--line); position:relative; }
+  .map-area{ height:420px; background:var(--parchment-2); position:relative; }
+  .map-area svg{ width:100%; height:100%; }
+  .compass{ position:absolute; top:20px; right:20px; width:70px; height:70px; filter:drop-shadow(0 4px 8px rgba(0,0,0,.25)); }
+  .map-legend{ position:absolute; bottom:16px; left:18px; background:rgba(251,243,225,.92); border:1px solid var(--line); border-radius:8px; padding:10px 14px; font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-soft); display:flex; gap:14px; }
+  .legend-item{ display:flex; align-items:center; gap:6px; }
+  .legend-dot{ width:8px;height:8px;border-radius:50%; }
+  .export-row{ display:flex; gap:16px; padding:0 56px 48px; align-items:stretch; }
+  .export-card{ background:var(--cream); border:1.5px solid var(--espresso); border-radius:12px; padding:22px 26px; flex:1; display:flex; justify-content:space-between; align-items:center; }
+  .export-stats{ display:flex; gap:30px; font-family:'Courier Prime',monospace; }
+  .export-stats div span{ display:block; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+  .export-stats div b{ font-size:17px; color:var(--ink); font-family:'Fraunces'; font-weight:600; }
+  .gmaps-btn{ display:flex; align-items:center; gap:10px; }
+  .gmaps-icon{ width:20px; height:20px; }
+  .secondary-actions{ display:flex; gap:10px; }
+  .icon-btn{ background:var(--cream); border:1.5px solid var(--line); color:var(--ink-soft); font-family:'Courier Prime',monospace; font-size:12px; padding:10px 16px; border-radius:8px; cursor:pointer; }
+
+  /* ===== FRAME 4: EXPORT MODAL ===== */
+  .modal-backdrop{ background:rgba(58,36,24,.55); min-height:640px; display:flex; align-items:center; justify-content:center; padding:40px; }
+  .modal{ background:var(--cream); border-radius:16px; width:520px; max-width:100%; padding:32px; box-shadow:0 30px 60px -20px rgba(0,0,0,.5); }
+  .modal-head{ display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .modal-icon{ width:40px; height:40px; border-radius:10px; background:var(--gold); display:flex; align-items:center; justify-content:center; font-size:19px; }
+  .modal h3{ font-size:20px; font-weight:600; }
+  .modal p.sub{ font-family:'Work Sans'; font-size:13px; color:var(--ink-soft); margin:2px 0 0; }
+  .waypoint-list{ background:var(--parchment); border-radius:10px; padding:16px; margin:20px 0; }
+  .wp-row{ display:flex; align-items:center; gap:12px; padding:8px 0; font-family:'Work Sans'; font-size:13.5px; }
+  .wp-num{ width:22px; height:22px; border-radius:50%; background:var(--espresso); color:var(--gold); font-family:'Courier Prime'; font-size:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .modal-note{ font-family:'Work Sans'; font-size:12px; color:var(--ink-soft); background:#F8EFD9; border:1px dashed var(--line); border-radius:8px; padding:12px 14px; margin-bottom:22px; }
+  .modal-actions{ display:flex; gap:12px; }
+  .modal-actions .btn{ flex:1; }
+
+  .mobile .result-header{ flex-direction:column; align-items:flex-start; gap:6px; padding:22px 20px 14px; }
+  .mobile .map-wrap{ margin:0 20px 20px; }
+  .mobile .map-area{ height:260px; }
+  .mobile .export-row{ padding:0 20px 28px; flex-direction:column; }
+</style>
+</head>
+<body>
+
+<div class="board-label">WAYPOINT AI ATLAS — PROMPT-TO-MAP GENERATOR · DESIGN BOARD</div>
+<div class="board">
+
+  <!-- FRAME 1: PROMPT LANDING -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 1</span> Prompt Landing</div>
+    <div class="frame">
+      <nav class="nav"><div class="logo"><span class="dot"></span>Waypoint Atlas</div></nav>
+      <section class="prompt-hero">
+        <div class="grain"></div>
+        <div class="eyebrow" style="color:var(--gold); justify-content:center;">DESCRIBE IT. WE'LL DRAW IT.</div>
+        <h1>Tell us the trip.<br>We'll <em>sketch the map.</em></h1>
+        <p>One prompt in, one real map out — plotted, labeled, ready to open in Google Maps.</p>
+        <div class="prompt-box">
+          <textarea placeholder="e.g. A scenic 3-day loop through Vermont in fall, with a stop every 2 hours and no interstates…"></textarea>
+          <div class="prompt-actions">
+            <span class="prompt-hint">⏎ to generate, or describe stops, pace, vibe — anything</span>
+            <button class="btn btn-accent">Generate Map</button>
+          </div>
+        </div>
+        <div class="examples">
+          <button class="ex-chip">Fastest route, Chicago to Denver</button>
+          <button class="ex-chip">Coastal drive, stop every 2 hours</button>
+          <button class="ex-chip">Backroads only, no interstates</button>
+          <button class="ex-chip">BBQ crawl through Texas</button>
+        </div>
+      </section>
+      <section class="gallery">
+        <h3>Recent generations</h3>
+        <div class="gallery-grid">
+          <div class="gcard"><div class="gcard-map"></div><div class="gcard-body"><p>"Fall foliage loop, New England, 4 days"</p></div></div>
+          <div class="gcard"><div class="gcard-map"></div><div class="gcard-body"><p>"Fastest route avoiding tolls, LA to Phoenix"</p></div></div>
+          <div class="gcard"><div class="gcard-map"></div><div class="gcard-body"><p>"Coastal Highway 1, stop for every viewpoint"</p></div></div>
+          <div class="gcard"><div class="gcard-map"></div><div class="gcard-body"><p>"Cheapest gas route, Denver to Omaha"</p></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- FRAME 2: GENERATING -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 2</span> Generating</div>
+    <div class="frame">
+      <div class="gen-wrap">
+        <div class="grain"></div>
+        <div class="gen-recap">🧭 "Scenic 3-day loop, Vermont, fall, no interstates"</div>
+        <div class="gen-map">
+          <svg viewBox="0 0 1000 400" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;">
+            <path d="M300,260 C330,220 300,180 340,150 C370,130 360,100 400,90"
+                  fill="none" stroke="#4A2E1C" stroke-width="4" stroke-linecap="round"
+                  stroke-dasharray="600" stroke-dashoffset="200" opacity="0.9"/>
+            <circle cx="300" cy="260" r="8" fill="#D9A441" stroke="#3A2418" stroke-width="2"/>
+            <circle cx="400" cy="90" r="8" fill="#B5562E" stroke="#3A2418" stroke-width="2" opacity="0.4"/>
+          </svg>
+        </div>
+        <div class="gen-status"><span class="gen-dot"></span>Placing stops along the route…</div>
+        <div class="gen-steps">
+          <span class="done">✓ Interpreting prompt</span>
+          <span class="done">✓ Routing backroads</span>
+          <span>Finding fall foliage viewpoints</span>
+          <span>Finalizing map</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRAME 3: RESULT MAP + EXPORT -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 3</span> Generated Map</div>
+    <div class="frame">
+      <div class="result-header">
+        <div>
+          <h2>Your Vermont Loop</h2>
+          <div class="prompt-recap">🧭 Scenic · Fall foliage · No interstates · 3 days</div>
+        </div>
+        <button class="btn btn-ghost">Refine prompt →</button>
+      </div>
+      <div class="map-wrap">
+        <div class="map-area">
+          <svg viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+            <defs><pattern id="g2" width="60" height="60" patternUnits="userSpaceOnUse"><path d="M60,0 L0,0 0,60" fill="none" stroke="#C4A96F" stroke-width="0.6" opacity="0.5"/></pattern></defs>
+            <rect width="1000" height="600" fill="url(#g2)"/>
+            <path d="M420,180 C460,160 500,190 470,230 C450,260 500,280 480,320 C465,345 500,370 460,400 C430,420 440,450 400,460 C370,468 380,200 420,180 Z"
+                  fill="#DDC79A" stroke="#5A4128" stroke-width="3" stroke-linejoin="round" opacity="0.95"/>
+            <path d="M430,220 C450,240 460,270 445,290 C465,300 470,330 450,350 C465,370 455,395 430,405"
+                  fill="none" stroke="#4A2E1C" stroke-width="5" stroke-linecap="round" stroke-dasharray="0.1 14"/>
+            <circle cx="430" cy="220" r="9" fill="#D9A441" stroke="#3A2418" stroke-width="2"/>
+            <text x="446" y="216" font-family="Courier Prime" font-size="14" fill="#3A2418">Start — Manchester</text>
+            <circle cx="430" cy="405" r="9" fill="#B5562E" stroke="#3A2418" stroke-width="2"/>
+            <text x="446" y="415" font-family="Courier Prime" font-size="14" fill="#3A2418">End — Stowe</text>
+            <circle cx="452" cy="285" r="5" fill="#6B7248"/>
+            <circle cx="447" cy="345" r="5" fill="#6B7248"/>
+            <circle cx="460" cy="330" r="5" fill="#B5562E"/>
+          </svg>
+          <svg class="compass" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="42" fill="#FBF3E1" stroke="#4A2E1C" stroke-width="2"/>
+            <circle cx="50" cy="50" r="34" fill="none" stroke="#4A2E1C" stroke-width="1" opacity="0.5"/>
+            <path d="M50,14 L58,50 L50,86 L42,50 Z" fill="#B5562E"/>
+            <path d="M14,50 L50,42 L86,50 L50,58 Z" fill="#4A2E1C" opacity="0.85"/>
+            <text x="50" y="26" text-anchor="middle" font-family="Fraunces" font-weight="600" font-size="13" fill="#3A2418">N</text>
+          </svg>
+          <div class="map-legend">
+            <div class="legend-item"><span class="legend-dot" style="background:#6B7248"></span>Foliage viewpoint</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#B5562E"></span>Stop</div>
+          </div>
+        </div>
+      </div>
+      <div class="export-row">
+        <div class="export-card">
+          <div class="export-stats">
+            <div><span>Distance</span><b>212 mi</b></div>
+            <div><span>Drive time</span><b>5h 40m</b></div>
+            <div><span>Stops</span><b>5</b></div>
+            <div><span>Days</span><b>3</b></div>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="icon-btn">Copy link</button>
+            <button class="icon-btn">Download image</button>
+            <button class="btn btn-accent gmaps-btn">
+              <svg class="gmaps-icon" viewBox="0 0 24 24" fill="none"><path d="M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8Z" fill="#3A2418"/><circle cx="12" cy="10" r="3" fill="#F1E4C3"/></svg>
+              Add to Google Maps
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRAME 4: EXPORT MODAL -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 4</span> Export Confirmation</div>
+    <div class="frame">
+      <div class="modal-backdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <div class="modal-icon">🗺️</div>
+            <div><h3>Add to Google Maps</h3><p class="sub">5 stops will be added as waypoints</p></div>
+          </div>
+          <div class="waypoint-list">
+            <div class="wp-row"><span class="wp-num">1</span>Manchester, VT — start</div>
+            <div class="wp-row"><span class="wp-num">2</span>Equinox Skyline Viewpoint</div>
+            <div class="wp-row"><span class="wp-num">3</span>Weston Village stop</div>
+            <div class="wp-row"><span class="wp-num">4</span>Sugarbush Foliage Overlook</div>
+            <div class="wp-row"><span class="wp-num">5</span>Stowe, VT — end</div>
+          </div>
+          <div class="modal-note">Google Maps supports up to 9 stops per route. This trip fits within that limit — it'll open pre-loaded and ready to navigate.</div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost">Cancel</button>
+            <button class="btn btn-primary">Open in Google Maps →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRAME 5: MOBILE -->
+  <div class="frame-wrap">
+    <div class="mile-tag"><span class="mile-badge">MI 5</span> Mobile — Result</div>
+    <div class="frame mobile">
+      <div class="result-header">
+        <div><h2 style="font-size:20px;">Your Vermont Loop</h2><div class="prompt-recap" style="margin-top:6px;">🧭 Scenic · No interstates</div></div>
+      </div>
+      <div class="map-wrap">
+        <div class="map-area" style="height:240px;">
+          <svg viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+            <path d="M420,180 C460,160 500,190 470,230 C450,260 500,280 480,320 C465,345 500,370 460,400 C430,420 440,450 400,460 C370,468 380,200 420,180 Z" fill="#DDC79A" stroke="#5A4128" stroke-width="3"/>
+            <path d="M430,220 C450,240 460,270 445,290 C465,300 470,330 450,350 C465,370 455,395 430,405" fill="none" stroke="#4A2E1C" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 14"/>
+            <circle cx="430" cy="220" r="10" fill="#D9A441" stroke="#3A2418" stroke-width="2"/>
+            <circle cx="430" cy="405" r="10" fill="#B5562E" stroke="#3A2418" stroke-width="2"/>
+          </svg>
+        </div>
+      </div>
+      <div class="export-row">
+        <div class="export-card" style="flex-direction:column;align-items:flex-start;gap:14px;">
+          <div class="export-stats"><div><span>Distance</span><b>212 mi</b></div><div><span>Stops</span><b>5</b></div></div>
+          <button class="btn btn-accent gmaps-btn" style="width:100%;justify-content:center;">
+            <svg class="gmaps-icon" viewBox="0 0 24 24" fill="none"><path d="M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8Z" fill="#3A2418"/><circle cx="12" cy="10" r="3" fill="#F1E4C3"/></svg>
+            Add to Google Maps
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

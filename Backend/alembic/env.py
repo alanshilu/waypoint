@@ -1,0 +1,39 @@
+from alembic import context
+
+from app.core.db import Base, engine
+from app.models import trip, route, poi  # noqa: F401
+
+target_metadata = Base.metadata
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    # PostGIS owns spatial_ref_sys; keep autogenerate from trying to drop it
+    return not (type_ == "table" and name == "spatial_ref_sys")
+
+
+def run_migrations_offline():
+    context.configure(
+        url=engine.url.render_as_string(hide_password=False),
+        target_metadata=target_metadata,
+        include_object=include_object,
+        literal_binds=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online():
+    with engine.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

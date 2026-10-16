@@ -1,0 +1,39 @@
+{
+  "_comment": "MOCK DATA. Invented points of interest. Each set stands in for one GET /pois/search response; mock mode serves the set whose centre is nearest the requested lat/lon. Names, ids and positions are made up.",
+  "sets": [
+    {
+      "center": { "lat": 34.0522, "lon": -118.2437 },
+      "pois": [
+        { "id": 1, "name": "Grand Central Market", "category": "restaurant", "lat": 34.0509, "lon": -118.2489 },
+        { "id": 2, "name": "Olvera Street", "category": "attraction", "lat": 34.0575, "lon": -118.2379 },
+        { "id": 3, "name": "Grand Park", "category": "park", "lat": 34.0563, "lon": -118.2468 },
+        { "id": 4, "name": "Alameda Fuel Stop", "category": "fuel", "lat": 34.0461, "lon": -118.2372 },
+        { "id": 5, "name": "Bunker Hill Hotel", "category": "hotel", "lat": 34.0531, "lon": -118.2551 },
+        { "id": 6, "name": "Little Tokyo Coffee", "category": "cafe", "lat": 34.0497, "lon": -118.2398 },
+        { "id": 7, "name": "Museum of the Basin", "category": "museum", "lat": 34.0601, "lon": -118.2502 }
+      ]
+    },
+    {
+      "center": { "lat": 36.19, "lon": -120.19 },
+      "pois": [
+        { "id": 11, "name": "Valley Junction Fuel", "category": "fuel", "lat": 36.1952, "lon": -120.1968 },
+        { "id": 12, "name": "Ranch House Diner", "category": "restaurant", "lat": 36.1881, "lon": -120.1835 },
+        { "id": 13, "name": "Interstate Burger", "category": "fast_food", "lat": 36.1975, "lon": -120.1811 },
+        { "id": 14, "name": "Orchard Rest Stop", "category": "picnic_site", "lat": 36.1806, "lon": -120.2012 },
+        { "id": 15, "name": "Westside Inn", "category": "hotel", "lat": 36.2021, "lon": -120.1903 },
+        { "id": 16, "name": "Almond Row Market", "category": "convenience", "lat": 36.1847, "lon": -120.1756 }
+      ]
+    },
+    {
+      "center": { "lat": 35.78, "lon": -121.32 },
+      "pois": [
+        { "id": 21, "name": "Ragged Point Overlook", "category": "viewpoint", "lat": 35.7812, "lon": -121.3305 },
+        { "id": 22, "name": "Cliffside Cafe", "category": "cafe", "lat": 35.7786, "lon": -121.3251 },
+        { "id": 23, "name": "Salmon Creek Camp", "category": "camp_site", "lat": 35.7924, "lon": -121.3342 },
+        { "id": 24, "name": "Elephant Seal Beach", "category": "beach", "lat": 35.7689, "lon": -121.3098 },
+        { "id": 25, "name": "Coast Road Fuel", "category": "fuel", "lat": 35.7753, "lon": -121.3187 },
+        { "id": 26, "name": "Piedras Picnic Ground", "category": "picnic_site", "lat": 35.7861, "lon": -121.3129 }
+      ]
+    }
+  ]
+}
