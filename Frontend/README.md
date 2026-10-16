@@ -42,6 +42,10 @@ The backend only allows CORS from `http://localhost:5173`, so the dev server is 
 
 Real mode writes to the database: each planned trip adds one trip row and two route rows, and uses the OpenRouteService quota.
 
+## Scenic score
+
+The scenic score is terrain only: climb density `d = (ascent + descent) / miles`, scored as `100 × d / (d + 40)` on a 0-100 scale (40 m/mi scores 50). Drive time is not part of it; the backend reports slowness separately as `duration_vs_fastest`. The formula and the reference constant are documented in `Backend/app/services/scoring_service.py`; `src/format.ts` and `scripts/make-fixture.mjs` repeat them and must be kept in step.
+
 ## Stops (points of interest)
 
 Ask for "Stops near destination" or "Stops along the route" (the midpoint of the selected route, or of the fastest route if none is selected). The results are listed over the map and drawn as numbered markers; the map zooms to them, and the "Stops" button in the zoom toggle returns to that view. Mock results come from `src/fixtures/pois.json`.

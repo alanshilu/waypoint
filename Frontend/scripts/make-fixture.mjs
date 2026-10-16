@@ -174,11 +174,10 @@ function buildRoute(spec) {
     else descent -= delta;
   }
 
-  // Same formula as Backend/app/services/scoring_service.py
-  const scenic_score = round(
-    (ascent + descent) / spec.distance_miles + (spec.duration_seconds / spec.distance_miles) * 0.5,
-    1,
-  );
+  // Same terrain-only formula as Backend/app/services/scoring_service.py
+  const HALF_SCORE_DENSITY_M_PER_MILE = 40;
+  const density = (ascent + descent) / spec.distance_miles;
+  const scenic_score = round((100 * density) / (density + HALF_SCORE_DENSITY_M_PER_MILE), 1);
 
   return {
     id: spec.id,
@@ -191,6 +190,12 @@ function buildRoute(spec) {
     geometry: { type: "LineString", coordinates },
     elevation_profile,
   };
+}
+
+// Same as the backend's duration_vs_fastest: duration / fastest duration, 2 dp
+function withDurationRatios(routes) {
+  const fastest = routes.find((r) => r.route_type === "fastest").duration_seconds;
+  return routes.map((r) => ({ ...r, duration_vs_fastest: round(r.duration_seconds / fastest, 2) }));
 }
 
 const forecast = (rows) =>
@@ -209,7 +214,7 @@ const trip = {
   origin: { name: "San Francisco, California, USA", lat: 37.7749, lon: -122.4194 },
   destination: { name: "Los Angeles, California, USA", lat: 34.0522, lon: -118.2437 },
   selected_route_id: null,
-  routes: [buildRoute(FASTEST), buildRoute(BACKROADS)],
+  routes: withDurationRatios([buildRoute(FASTEST), buildRoute(BACKROADS)]),
   weather: [
     {
       name: "San Francisco, California, USA",

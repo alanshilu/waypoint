@@ -84,6 +84,7 @@ function adaptRoute(raw: RawRoute): Route {
     ascent_m: raw.ascent_m ?? 0,
     descent_m: raw.descent_m ?? 0,
     scenic_score: raw.scenic_score ?? 0,
+    duration_vs_fastest: raw.duration_vs_fastest ?? null,
     geometry: raw.geometry,
     elevation_profile: raw.elevation_profile ?? undefined,
   };

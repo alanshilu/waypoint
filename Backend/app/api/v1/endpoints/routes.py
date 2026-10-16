@@ -7,7 +7,7 @@ from app.services.routing_service import get_route_options
 from app.services.scoring_service import score_route_options
 from app.services.db_route_service import save_routes_to_db
 from app.models.route import Route
-from app.api.v1.serializers import route_to_dict
+from app.api.v1.serializers import add_duration_ratios, route_to_dict
 
 router = APIRouter()
 
@@ -34,7 +34,7 @@ def generate_and_save_routes(trip_id: int, db: Session = Depends(get_db)):
     return {
         "status": "success",
         "trip_id": trip_id,
-        "routes": [route_to_dict(r) for r in db_routes]
+        "routes": add_duration_ratios([route_to_dict(r) for r in db_routes])
     }
 @router.post("/select/{route_id}")
 def select_route(route_id: int, db: Session = Depends(get_db)):

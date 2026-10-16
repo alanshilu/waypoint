@@ -8,6 +8,7 @@ import {
   formatScore,
   routeLabel,
   scenicBreakdown,
+  HALF_SCORE_DENSITY_M_PER_MILE,
 } from "../format";
 import { useTrip } from "../state/TripProvider";
 import type { Route } from "../types";
@@ -17,27 +18,27 @@ const num = (n: number, digits = 0) =>
 
 /** Shows how the backend arrives at the score, using this route's numbers. */
 function ScenicTooltip({ route }: { route: Route }) {
-  const { elevationDensity, pace, score } = scenicBreakdown(route);
+  const { elevationDensity, score } = scenicBreakdown(route);
   return (
     <div className="tooltip" role="tooltip">
       <p className="tooltip-title">Scenic score</p>
-      <p>(ascent + descent) / distance + pace &times; 0.5</p>
+      <p>Terrain only: climb density d = (ascent + descent) / distance, score = 100 &times; d / (d + {HALF_SCORE_DENSITY_M_PER_MILE})</p>
       <dl>
         <dt>Climb density</dt>
         <dd>
           ({num(route.ascent_m)} + {num(route.descent_m)}) / {num(route.distance_miles, 1)} ={" "}
           {num(elevationDensity, 1)} m/mi
         </dd>
-        <dt>Pace</dt>
-        <dd>
-          {num(route.duration_seconds)} s / {num(route.distance_miles, 1)} mi = {num(pace, 1)} s/mi
-        </dd>
         <dt>Score</dt>
         <dd>
-          {num(elevationDensity, 1)} + {num(pace, 1)} &times; 0.5 = {num(score, 1)}
+          100 &times; {num(elevationDensity, 1)} / ({num(elevationDensity, 1)} + {HALF_SCORE_DENSITY_M_PER_MILE}) ={" "}
+          {num(score, 1)}
         </dd>
       </dl>
-      <p className="tooltip-note">Higher means slower and hillier, not a rating out of 100.</p>
+      <p className="tooltip-note">
+        Higher means hillier. {HALF_SCORE_DENSITY_M_PER_MILE} m/mi scores 50. Drive time is not part of the score; it
+        is compared separately on the card.
+      </p>
     </div>
   );
 }

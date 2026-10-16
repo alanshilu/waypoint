@@ -24,12 +24,15 @@ export function formatClimbRatio(ascent: number, baselineAscent: number): string
   return `${(ascent / baselineAscent).toFixed(1)}x climbing`;
 }
 
-/** Same formula as Backend/app/services/scoring_service.py. */
+/** Climb density that scores 50; must match Backend/app/services/scoring_service.py. */
+export const HALF_SCORE_DENSITY_M_PER_MILE = 40;
+
+/** Same terrain-only formula as Backend/app/services/scoring_service.py. */
 export function scenicBreakdown(route: Route) {
   const distance = route.distance_miles > 0 ? route.distance_miles : 1;
   const elevationDensity = (route.ascent_m + route.descent_m) / distance;
-  const pace = route.duration_seconds / distance;
-  return { elevationDensity, pace, score: elevationDensity + pace * 0.5 };
+  const score = (100 * elevationDensity) / (elevationDensity + HALF_SCORE_DENSITY_M_PER_MILE);
+  return { elevationDensity, score };
 }
 
 export const routeLabel = (type: string) => (type === "backroads" ? "Backroads" : "Fastest");

@@ -22,7 +22,10 @@ export interface Route {
   duration_seconds: number;
   ascent_m: number;
   descent_m: number;
+  /** Terrain only, 0-100 (higher is hillier). Unitless: compare routes, don't quote it "out of 100". */
   scenic_score: number;
+  /** Duration divided by the fastest route's duration; slowness is kept out of the scenic score. */
+  duration_vs_fastest?: number | null;
   /** [lon, lat] pairs */
   geometry: LineString;
   /** Absent for routes saved before the backend kept elevation. */
@@ -141,6 +144,8 @@ export interface RawRoute {
   trip_id: number;
   route_type: string;
   scenic_score: number | null;
+  /** Added with the terrain-only score; absent from older backends. */
+  duration_vs_fastest?: number | null;
   distance_miles: number;
   duration_seconds: number;
   ascent_m: number | null;
