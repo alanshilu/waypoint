@@ -75,9 +75,15 @@ def test_numeric_dates_must_come_from_results():
     assert ok.passed and not bad.passed
 
 
-def test_numeric_clock_time_needs_plan_start():
-    assert numeric_grounding(session("Leave at 8 AM.", [*BASE_STEPS, PLAN])).passed
-    assert not numeric_grounding(session("Leave at 6 AM.", [*BASE_STEPS, PLAN])).passed
+def test_numeric_clock_time_must_be_in_a_result():
+    plan = step("plan_stops", PLAN.args, {**PLAN.full_result, "stops": [
+        {**PLAN.full_result["stops"][0], "arrival_time": "2026-10-17T16:00-05:00"}]})
+    assert numeric_grounding(session("Leave at 8 AM, stop around 16:00.", [*BASE_STEPS, plan])).passed
+    assert not numeric_grounding(session("Leave at 6 AM.", [*BASE_STEPS, plan])).passed
+
+
+def test_plain_sentence_start_is_not_a_list_lead():
+    assert stops_grounded(session("Leave Sunday, October 18, on the fastest route.", BASE_STEPS)).passed
 
 
 def test_numeric_ids_only_ground_when_written_as_ids():

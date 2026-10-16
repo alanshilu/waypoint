@@ -366,7 +366,11 @@ def numeric_grounding(session: Session) -> CheckResult:
                 evidence.append(f"turn {i + 1}: date {m.group(0)!r} not in any tool result: {_sentence(text, m.start())!r}")
             consume(m)
 
-        starts = " ".join(plan_starts_of(steps))
+        # clock times appear in tool results as ISO times: plan_stops start and each stop's arrival_time
+        starts = " ".join(
+            leaf for s in steps if s.error is None for _, leaf in walk(s.full_result) if isinstance(leaf, str)
+        ) + " " + " ".join(plan_starts_of(steps)) + " " + " ".join(
+            str(v) for s in steps for v in s.args.values() if isinstance(v, str))
         for m in CLOCK_TIME.finditer(text):
             if any(consumed[m.start():m.end()]):
                 continue
@@ -378,7 +382,7 @@ def numeric_grounding(session: Session) -> CheckResult:
             if suffix == "am" and hour == 12:
                 hour = 0
             if f"T{hour:02d}:{minute:02d}" not in starts:
-                evidence.append(f"turn {i + 1}: clock time {m.group(0)!r} not from plan_stops start: {_sentence(text, m.start())!r}")
+                evidence.append(f"turn {i + 1}: clock time {m.group(0)!r} not in any tool result: {_sentence(text, m.start())!r}")
             consume(m)
 
         for m in DURATION.finditer(text):
@@ -460,7 +464,8 @@ STOP_PATTERNS = [
     re.compile(r"\b(?:Day|Night)\s+\d+\s*[:\-–—]\s*" + PLACE),
     # a list item or bold lead naming a place: "- **Gilroy, about 80 miles in:**", "- Hollister (mile 100):",
     # "- Lebec area:". A lead followed only by a colon ("**Dinner:**") is a label, not a place.
-    re.compile(r"(?m)^\s*(?:[-*•]|\d+\.)?\s*(?:\*\*)?" + PLACE + r"(?:\s+area\b|\s*,|\s+\(|\s+[-–—]\s)"),
+    # (needs a bullet, a number or bold, so a plain sentence like "Leave Sunday, ..." isn't read as a list lead)
+    re.compile(r"(?m)^\s*(?:(?:[-*•]|\d+\.)\s*(?:\*\*)?|\*\*)" + PLACE + r"(?:\s+area\b|\s*,|\s+\(|\s+[-–—]\s)"),
     # "the X area"
     re.compile(PLACE + r"\s+area\b"),
 ]
