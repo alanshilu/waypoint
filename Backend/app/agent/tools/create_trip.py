@@ -5,7 +5,10 @@ from app.agent.tools.geocode_location import BASE_URL
 
 def create_trip(name, origin_label, origin_lat, origin_lon,
                 destination_label, destination_lat, destination_lon) -> dict:
-    """Creates a trip record and returns its trip_id."""
+    """
+    Creates a trip record and returns its trip_id. A trip with the same origin
+    and destination from the last 24 hours is returned instead, with reused: true.
+    """
     payload = {
         "name": name,
         "origin_name": origin_label,
@@ -15,14 +18,17 @@ def create_trip(name, origin_label, origin_lat, origin_lon,
         "destination_lat": destination_lat,
         "destination_lon": destination_lon,
     }
-    response = requests.post(f"{BASE_URL}/trips/", json=payload, timeout=10)
+    response = requests.post(f"{BASE_URL}/trips/", params={"reuse_recent": "true"}, json=payload, timeout=10)
     response.raise_for_status()
-    return response.json()  # {"trip_id": ...}
+    return response.json()  # {"trip_id": ..., "reused": bool}
 
 
 TOOL_SCHEMA = {
     "name": "create_trip",
-    "description": "Creates a new trip record once you have geocoded coordinates for both origin and destination.",
+    "description": (
+        "Creates a trip record once you have geocoded coordinates for both origin and destination. If a trip with "
+        "the same origin and destination was created in the last 24 hours, returns that trip with reused: true."
+    ),
     "strict": True,
     "input_schema": {
         "type": "object",

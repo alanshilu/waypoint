@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from geoalchemy2.shape import to_shape # ADDED: to convert PostGIS binary to Python
 from app.core.db import get_db
@@ -11,13 +11,33 @@ from app.api.v1.serializers import add_duration_ratios, route_to_dict
 
 router = APIRouter()
 
+ROUTE_TYPES = ("fastest", "backroads")
+
+
 @router.post("/generate/{trip_id}")
-def generate_and_save_routes(trip_id: int, db: Session = Depends(get_db)):
+def generate_and_save_routes(
+    trip_id: int,
+    reuse_existing: bool = Query(False, description="Return the trip's existing routes instead of generating new ones"),
+    db: Session = Depends(get_db),
+):
     # 1. Fetch the trip directly from the database
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
 
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+    if reuse_existing:
+        # newest route of each type; reuse only when the trip has both
+        latest: dict[str, Route] = {}
+        for route in db.query(Route).filter(Route.trip_id == trip_id).order_by(Route.id.desc()):
+            latest.setdefault(route.route_type, route)
+        if all(t in latest for t in ROUTE_TYPES):
+            return {
+                "status": "success",
+                "trip_id": trip_id,
+                "reused": True,
+                "routes": add_duration_ratios([route_to_dict(latest[t]) for t in ROUTE_TYPES]),
+            }
 
     # 2. Extract Lat/Lon from the PostGIS Point binary
     origin_shape = to_shape(trip.origin_point)           # Converts to Shapely Point
@@ -34,6 +54,7 @@ def generate_and_save_routes(trip_id: int, db: Session = Depends(get_db)):
     return {
         "status": "success",
         "trip_id": trip_id,
+        "reused": False,
         "routes": add_duration_ratios([route_to_dict(r) for r in db_routes])
     }
 @router.post("/select/{route_id}")

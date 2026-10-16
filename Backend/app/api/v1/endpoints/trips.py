@@ -13,12 +13,29 @@ from app.models.trip import Trip
 from app.schemas.trip import TripCreate
 from app.services.geocoding_service import reverse_geocode
 from app.services.stop_planning import plan_stops
+from app.services.trip_matching import REUSE_WINDOW, recent_enough, same_trip
 from app.services.weather_service import get_forecast_for_date, get_utc_offset_seconds
 
 router = APIRouter()
 
 @router.post("/")
-def create_trip(payload: TripCreate, db: Session = Depends(get_db)):
+def create_trip(
+    payload: TripCreate,
+    reuse_recent: bool = Query(False, description="Return an existing trip with the same ends from the last 24 h"),
+    db: Session = Depends(get_db),
+):
+    if reuse_recent:
+        since = datetime.now(timezone.utc) - REUSE_WINDOW
+        wanted = ((payload.origin_lat, payload.origin_lon), (payload.destination_lat, payload.destination_lon))
+        for trip in db.query(Trip).filter(Trip.created_at >= since).order_by(Trip.created_at.desc()):
+            o, d = to_shape(trip.origin_point), to_shape(trip.destination_point)
+            if recent_enough(trip.created_at) and same_trip(*wanted, (o.y, o.x), (d.y, d.x)):
+                return {
+                    "status": "success",
+                    "message": "Reused a trip with the same origin and destination from the last 24 hours",
+                    "trip_id": trip.id,
+                    "reused": True,
+                }
 
     # 1. Convert flat coordinates into PostGIS Geometry Points
     # Note: Shapely Points are defined as (longitude, latitude)
@@ -45,7 +62,8 @@ def create_trip(payload: TripCreate, db: Session = Depends(get_db)):
     return {
         "status": "success",
         "message": "Trip created successfully",
-        "trip_id": new_trip.id
+        "trip_id": new_trip.id,
+        "reused": False,
     }
 @router.get("/trips")
 def list_trips(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
