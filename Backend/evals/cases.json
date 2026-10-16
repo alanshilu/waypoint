@@ -1,0 +1,58 @@
+{
+  "_comment": "Eval cases for the Waypoint agent. Each case runs as one session; 'turns' are sent in order with shared history. 'checks' lists the checks from checks.py that apply.",
+  "cases": [
+    {
+      "id": "austin-sf-fastest",
+      "turns": ["Austin, TX to San Francisco, CA, I want the fastest route."],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "seattle-portland-scenic",
+      "turns": ["Plan a scenic trip from Seattle to Portland."],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "boston-acadia-3-days",
+      "turns": ["Boston to Acadia National Park, 3 days. Where should I stay overnight and what will the weather be like?"],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "sf-la-backroads-stops",
+      "turns": ["SF to LA, backroads, any good stops?"],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "sf-la-repeat",
+      "turns": [
+        "San Francisco to Los Angeles, fastest route please.",
+        "San Francisco to Los Angeles, fastest route please."
+      ],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "denver-chicago-overnight",
+      "turns": ["I'm driving from Denver to Chicago. Where should I stop overnight, and what's the weather along the way?"],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "austin-sf-departure",
+      "turns": ["When is the best time this week to leave Austin for San Francisco, given the weather where I'll be each day?"],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "nyc-dc-compare",
+      "turns": ["Compare the fastest and backroads options from New York City to Washington, DC. How much more scenic is the backroads one?"],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "la-vegas-food",
+      "turns": ["Los Angeles to Las Vegas. Where can I eat when I get to Las Vegas?"],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    },
+    {
+      "id": "sd-sf-short-days",
+      "turns": ["San Diego to San Francisco, but I only want to drive 4 hours a day. Where do I stop each night?"],
+      "checks": ["numeric_grounding", "no_invented_scale", "stops_grounded", "weather_on_arrival_dates", "poi_coords_grounded", "no_duplicate_work", "concise_reply"]
+    }
+  ]
+}
