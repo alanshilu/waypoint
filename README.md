@@ -4,7 +4,7 @@ AI road-trip planner: a Claude tool-calling agent plans routes, overnight stops 
 
 Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leave tomorrow at 8am") and the agent geocodes both ends, generates a fastest and a backroads route, splits the drive into days, checks the weather at each stop **on the day you'll be there**, and finds places to stop. Every number it tells you comes from a tool result, and the app shows each tool call as it runs.
 
-![Fastest and backroads routes from San Francisco to Los Angeles, compared side by side](docs/screenshots/01-routes-compared.png)
+![Fastest and backroads routes from San Francisco to Los Angeles, compared side by side with their elevation profiles](docs/screenshots/02-routes-compared.png)
 
 ## Contents
 
@@ -32,22 +32,22 @@ Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leav
 
 ## Screenshots
 
-These were captured on 2026-10-18 from the current build in mock mode (fixture data; the agent's replies are scripted in mock mode), except the last one, which is the live agent.
+One live conversation, captured on 2026-10-18: the real agent (Claude Sonnet 5.5) on the real backend, with routes from OpenRouteService and forecasts from Open-Meteo. The "Live API" badge marks live mode; mock mode shows "Mock data".
 
-**Routes compared.** Fastest vs backroads, with the deltas that matter: +4h 15m, 2.4x the climbing, scenic 27 vs 42.
-![Route comparison](docs/screenshots/01-routes-compared.png)
+**1. The agent at work.** Each tool call appears as it starts and gets a tick and its latency when it finishes.
+![The agent geocoding both ends and saving the trip](docs/screenshots/01-agent-working.png)
 
-**Backroads selected, elevation profile.** Hovering the profile moves a marker along the route on the map.
-![Backroads route with elevation profile](docs/screenshots/02-backroads-elevation.png)
+**2. Routes compared.** "San Francisco to Los Angeles": the fastest route is 383 mi in 6h 30m; the backroads route adds 7h 31m and twice the climbing, for a scenic score of 52.6 against 38.3. Hovering the elevation profile moves a marker along both routes on the map.
+![Fastest and backroads routes with elevation profiles](docs/screenshots/02-routes-compared.png)
 
-**Stops along the route.** Points of interest near the midpoint of the selected route, numbered on the map.
-![Stops along the backroads route](docs/screenshots/03-stops-along-route.png)
+**3. Overnight stops with arrival-day weather.** "I'll take the backroads and leave tomorrow at 8am, max 5 hours of driving a day." The agent selects the backroads route and splits it into three days. Each night's forecast is for the date you get there, and it warns about an 80% chance of rain on arrival in Los Angeles.
+![Three-day backroads plan with overnight stops](docs/screenshots/03-overnight-stops.png)
 
-**Tool trace.** Every call the agent made for the last message, with status, latency and cache result.
+**4. Tool trace.** The calls behind the last reply, with status, latency and the model tokens for each.
 ![Tool trace drawer](docs/screenshots/04-tool-trace.png)
 
-**Live agent when a service fails.** On 2026-10-18 OpenRouteService was timing out. The agent, running for real, reported the failure and asked to retry instead of inventing a route. The map shows the two geocoded endpoints and nothing more.
-![Live agent reporting a route service failure](docs/screenshots/05-live-agent-route-service-down.png)
+**5. Honest when the data is thin.** "Find somewhere to eat near the first overnight stop." The point-of-interest search found only two campsites, and the agent says so instead of naming a restaurant from memory.
+![Point-of-interest search near the first overnight stop](docs/screenshots/05-poi-search.png)
 
 ## How it works
 
@@ -141,11 +141,11 @@ Results on 2026-10-18:
 
 | Check | Command | Result |
 |---|---|---|
-| Backend unit and API tests | `pytest` | 94 passed in 8.5 s |
+| Backend unit and API tests | `pytest` | 102 passed in 10.8 s |
 | Python lint | `ruff check .` | All checks passed |
 | Frontend types | `npm run typecheck` | 0 errors |
 
-The tests cover the agent HTTP API (sessions, rate limits, timeouts, streaming, error shapes) with the model stubbed out, every eval check on synthetic sessions, the scenic score, stop planning, trip matching and arrival-date weather across time zones. They make no network calls, but the app reads its settings at import time, so a `Backend/.env` must exist (copying `.env.example` is enough).
+The tests cover the agent HTTP API (sessions, rate limits, timeouts, streaming, error shapes) with the model stubbed out, every eval check on synthetic sessions, the scenic score, stop planning, trip matching, arrival-date weather across time zones, and route generation when OpenRouteService is slow or failing. They make no network calls, but the app reads its settings at import time, so a `Backend/.env` must exist (copying `.env.example` is enough).
 
 ## Getting started
 
@@ -239,7 +239,7 @@ docs/screenshots/ the images in this README
 
 ## Known limitations
 
-- **OpenRouteService timeouts.** Route requests time out after 30 s, and a timeout surfaces as an HTTP 500. The fastest and backroads requests run one after the other. On a slow ORS day (2026-10-18: 76 s and 109 s) route generation fails; the agent reports it rather than guessing.
+- **OpenRouteService speed.** Route generation depends on ORS, which can be slow: on 2026-10-18 a single SF to LA request took between 10 s and over 100 s. Both routes are requested in parallel and each may take up to `ORS_ROUTE_TIMEOUT_S` (90 s). Past that, the endpoint returns 504, or 502 for an ORS error, and the agent tells the user to retry. There is no automatic retry yet.
 - **Sessions are in memory.** They are lost on restart, and with several worker processes each worker has its own. Run one worker for now.
 - **No database in docker-compose.** `Backend/docker-compose.yml` starts only Redis; Postgres/PostGIS must be installed separately.
 - **Stop planning assumes a uniform pace** along the route and uses the origin's time zone for the whole trip.
@@ -250,12 +250,12 @@ docs/screenshots/ the images in this README
 
 Planned work, roughly in order:
 
-- [ ] Handle ORS timeouts as a clear 502/504 with a retry, and request both routes in parallel
+- [x] Handle ORS timeouts as a clear 502/504 and request both routes in parallel
+- [ ] Retry ORS with backoff, and show the failed tool call as failed in the chat checklist (today a handled ORS failure is listed as done, with the reason in the reply)
 - [ ] Postgres/PostGIS in `docker-compose.yml` so the whole stack starts with one command
 - [ ] Redis-backed agent sessions behind the existing `SessionStore` interface, for multiple workers
 - [ ] CI on every push: `pytest`, `ruff` and `npm run typecheck`
 - [ ] Repeat eval runs, including against an empty database, to exercise fresh route generation and measure variance
-- [ ] Live-mode screenshots in this README once ORS is responsive
 - [ ] Stop planning with real per-segment pace and time-zone changes along the route
 - [ ] Deployment: a hosted backend and frontend
 

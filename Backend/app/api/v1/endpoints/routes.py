@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from geoalchemy2.shape import to_shape # ADDED: to convert PostGIS binary to Python
 from app.core.db import get_db
 from app.models.trip import Trip
-from app.services.routing_service import get_route_options
+from app.services.routing_service import RoutingError, get_route_options
 from app.services.scoring_service import score_route_options
 from app.services.db_route_service import save_routes_to_db
 from app.models.route import Route
@@ -47,7 +47,11 @@ def generate_and_save_routes(
     end_lon, end_lat = destination_shape.x, destination_shape.y
 
     # 3. Pass the extracted coordinates to your services
-    raw_routes = get_route_options(start_lon, start_lat, end_lon, end_lat)
+    # The route service failing is an upstream problem, not ours: 504 when it timed out, else 502
+    try:
+        raw_routes = get_route_options(start_lon, start_lat, end_lon, end_lat)
+    except RoutingError as e:
+        raise HTTPException(status_code=504 if e.timed_out else 502, detail=str(e))
     scored_routes = score_route_options(raw_routes)
     db_routes = save_routes_to_db(db, trip_id, scored_routes)
 

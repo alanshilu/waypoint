@@ -1,6 +1,7 @@
 import requests
 
 from app.agent.tools.geocode_location import BASE_URL
+from app.core.config import settings
 
 
 def generate_routes(trip_id: int, force: bool = False) -> dict:
@@ -11,8 +12,12 @@ def generate_routes(trip_id: int, force: bool = False) -> dict:
     response = requests.post(
         f"{BASE_URL}/routes/generate/{trip_id}",
         params={"reuse_existing": "false" if force else "true"},
-        timeout=75,
+        # outlast the backend's own ORS timeout, so the backend's 504 arrives instead of a client timeout
+        timeout=settings.ors_route_timeout_s + 30,
     )
+    if response.status_code in (502, 504):
+        # the route service failed; give the model the reason rather than a bare HTTP error
+        return {"error": response.json().get("detail", response.text)}
     response.raise_for_status()
     return response.json()
 

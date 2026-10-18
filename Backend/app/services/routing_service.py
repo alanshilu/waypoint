@@ -1,6 +1,7 @@
 # app/services/routing_service.py
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from urllib import request, error
 from app.core.config import settings
 
@@ -11,6 +12,14 @@ HEADERS = {
     "Content-Type": "application/json",
     "Accept": "application/geo+json, application/json",
 }
+
+class RoutingError(Exception):
+    """ORS could not give a route: it timed out, was unreachable, or answered with an HTTP error."""
+
+    def __init__(self, message: str, timed_out: bool = False):
+        super().__init__(message)
+        self.timed_out = timed_out
+
 
 def format_duration(seconds: int) -> str:
     h = int(seconds // 3600)
@@ -33,14 +42,20 @@ def get_single_route(start_lon: float, start_lat: float, end_lon: float, end_lat
         
     req = request.Request(URL, data=json.dumps(body).encode("utf-8"), headers=HEADERS, method="POST")
 
+    timeout = settings.ors_route_timeout_s
     try:
-        with request.urlopen(req, timeout=30) as resp:
+        with request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except error.HTTPError as e:
-        print(f"HTTP {e.code} {e.reason}")
-        print(e.read().decode("utf-8", errors="replace")[:1000])
-        raise 
-        
+        body = e.read().decode("utf-8", errors="replace")[:300]
+        raise RoutingError(f"OpenRouteService answered HTTP {e.code} for the {preference} route: {body}") from e
+    except TimeoutError as e:
+        raise RoutingError(f"OpenRouteService did not answer within {timeout:g} s", timed_out=True) from e
+    except error.URLError as e:
+        if isinstance(e.reason, TimeoutError):
+            raise RoutingError(f"OpenRouteService did not answer within {timeout:g} s", timed_out=True) from e
+        raise RoutingError(f"OpenRouteService is unreachable: {e.reason}") from e
+
     route = data["features"][0]
     props = route["properties"]
     segment = props["segments"][0]
@@ -57,19 +72,16 @@ def get_single_route(start_lon: float, start_lat: float, end_lon: float, end_lat
 
 def get_route_options(start_lon: float, start_lat: float, end_lon: float, end_lat: float) -> dict:
     """
-    Generates multiple route candidates (e.g., fastest, backroads).
+    Generates the fastest and backroads candidates. The two ORS requests run in
+    parallel, so a slow ORS costs one timeout, not two. Raises RoutingError.
     """
-    return {
-        "fastest": get_single_route(
-            start_lon, start_lat, end_lon, end_lat, 
-            preference="fastest"
-        ),
-        "backroads": get_single_route(
-            start_lon, start_lat, end_lon, end_lat,
-            preference="shortest",
-            avoid_features=["highways"],
-        ),
-    }
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fastest = pool.submit(get_single_route, start_lon, start_lat, end_lon, end_lat, preference="fastest")
+        backroads = pool.submit(
+            get_single_route, start_lon, start_lat, end_lon, end_lat,
+            preference="shortest", avoid_features=["highways"],
+        )
+        return {"fastest": fastest.result(), "backroads": backroads.result()}
 
 # Protect your testing code so it doesn't run when imported by FastAPI
 if __name__ == "__main__":
