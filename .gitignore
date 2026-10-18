@@ -1,19 +1,35 @@
-# Gitignore placeholder
+# Secrets: only the .env.example files are committed
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-.env
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / Vite
 node_modules/
 dist/
 .vite/
+
+# Database dumps and local caches
+backups/
+*.dump
+*.sqlite
+
+# Eval runs: only the named summary reports (baseline.json, final.json) are committed
+Backend/evals/reports/*
+!Backend/evals/reports/baseline.json
+!Backend/evals/reports/final.json
+
+# OS / logs
 *.log
 .DS_Store
-backups/
-
-# Local caches and databases
-*.sqlite
-.pytest_cache/
-.ruff_cache/
-
-# Timestamped eval runs; named reports (baseline, final) are committed
-Backend/evals/reports/2*.json
+Thumbs.db
