@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     db_user: str = Field(validation_alias="DB_USER")
     db_pass: str = Field(validation_alias="DB_PASS")
     db_name: str = Field(validation_alias="DB_NAME")
-    redis_url: str = Field(validation_alias="REDIS_URL")
+    # Optional and unused for now: agent sessions are in memory (app/agent/sessions.py)
+    redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
     ors_api_key: str = Field(validation_alias="ORS_API_KEY")
     anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
 
