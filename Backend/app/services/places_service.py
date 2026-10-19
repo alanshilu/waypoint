@@ -23,16 +23,23 @@ from app.services import poi_service
 
 CAMPING_RADIUS_KM = 25.0  # about 15 miles: a short drive off the route at the end of the day
 FOOD_RADIUS_KM = 5.0
+# Overnight and lunch points on backroads are often far from a town: food searches that find nothing
+# within FOOD_RADIUS_KM are repeated once out to this radius (about 12 miles)
+FOOD_WIDE_RADIUS_KM = 20.0
 PLACES_PER_GROUP = 6
 CACHE_TTL_S = 24 * 3600
 CACHE_MAX_ENTRIES = 500
-# Public Overpass servers can be slow under load (30-45 s is not unusual): give each one this long,
-# and the whole search at most OVERPASS_BUDGET_S across servers, inside an agent turn's time limit
-TIMEOUT_S = 50
-OVERPASS_BUDGET_S = 75
-# OpenRouteService's POI search, used for food when Overpass is down; its area limit (~50 km2) means
-# a box of +-ORS_FOOD_HALF_SIDE_KM, so food within about 2 miles
-ORS_FOOD_HALF_SIDE_KM = 3.4
+# Public Overpass servers can be slow under load (38-50 s measured on 2026-10-19), so the first server
+# gets up to TIMEOUT_S and later ones only what's left: in practice they cover fast failures (429, 504).
+# One find_places call takes at most OVERPASS_BUDGET_S in all, inside the agent tool's 150 s timeout.
+TIMEOUT_S = 85
+OVERPASS_BUDGET_S = 100
+# The wider food round only starts with at least this much of the budget left
+WIDE_ROUND_MIN_S = 20
+# OpenRouteService's POI search, used for food when Overpass is down. Its 50 km2 area limit is measured
+# in Web Mercator, which inflates ground area by 1/cos(lat)^2, so the largest box is 7.07 km * cos(lat)
+# on a side: a half side of ORS_FOOD_HALF_SIDE_KM * cos(lat) (with a margin), about 1.6 miles at 37 N
+ORS_FOOD_HALF_SIDE_KM = 3.2
 ORS_FOOD_CATEGORY_IDS = [570, 566, 564, 567]  # restaurant, fast_food, cafe, food_court
 USER_AGENT = "Waypoint road-trip planner (https://github.com/alanshilu/waypoint)"
 
@@ -194,14 +201,14 @@ def _bbox(lat: float, lon: float, radius_km: float) -> str:
     return f"{lat - dlat:.4f},{lon - dlon:.4f},{lat + dlat:.4f},{lon + dlon:.4f}"
 
 
-def build_query(searches: list[tuple[str, float, float]]) -> str:
+def build_query(searches: list[tuple[str, float, float]], food_radius_km: float = FOOD_RADIUS_KM) -> str:
     """One Overpass QL query for every (kind, lat, lon) search; boxes, trimmed to the radius afterwards."""
     parts = []
     for kind, lat, lon in searches:
         if kind == "camping":
             parts.append(f'nwr["tourism"~"^({"|".join(CAMPING_TAGS)})$"]({_bbox(lat, lon, CAMPING_RADIUS_KM)});')
         else:
-            parts.append(f'nwr["amenity"~"^({"|".join(FOOD_TAGS)})$"]({_bbox(lat, lon, FOOD_RADIUS_KM)});')
+            parts.append(f'nwr["amenity"~"^({"|".join(FOOD_TAGS)})$"]({_bbox(lat, lon, food_radius_km)});')
     return f"[out:json][timeout:{TIMEOUT_S - 5}];({''.join(parts)});out center tags;"
 
 
@@ -223,9 +230,9 @@ def _overpass_once(url: str, query: str, timeout: float) -> list[dict]:
         raise PlacesError(f"OpenStreetMap (Overpass) is unreachable: {e.reason}") from e
 
 
-def _overpass(query: str) -> list[dict]:
-    """The first answer from the configured Overpass servers, within OVERPASS_BUDGET_S. Raises PlacesError."""
-    deadline = time.monotonic() + OVERPASS_BUDGET_S
+def _overpass(query: str, budget_s: float = OVERPASS_BUDGET_S) -> list[dict]:
+    """The first answer from the configured Overpass servers, within budget_s. Raises PlacesError."""
+    deadline = time.monotonic() + budget_s
     last: PlacesError | None = None
     for url in settings.overpass_url_list:
         left = deadline - time.monotonic()
@@ -238,10 +245,16 @@ def _overpass(query: str) -> list[dict]:
     raise last or PlacesError("No OpenStreetMap (Overpass) server is configured")
 
 
+def ors_half_side_km(lat: float) -> float:
+    """Half the side of the largest box OpenRouteService's POI search accepts at this latitude."""
+    return ORS_FOOD_HALF_SIDE_KM * math.cos(math.radians(lat))
+
+
 def _ors_food(lat: float, lon: float) -> list[dict]:
     """Food near a point from OpenRouteService, for when Overpass is down. Elements shaped like Overpass's."""
-    dlat = ORS_FOOD_HALF_SIDE_KM / 111.0
-    dlon = ORS_FOOD_HALF_SIDE_KM / (111.0 * max(0.1, math.cos(math.radians(lat))))
+    half = ors_half_side_km(lat)
+    dlat = half / 111.0
+    dlon = half / (111.0 * max(0.1, math.cos(math.radians(lat))))
     features = poi_service.fetch_pois_from_ors(lon - dlon, lat - dlat, lon + dlon, lat + dlat,
                                                category_ids=ORS_FOOD_CATEGORY_IDS)
     elements = []
@@ -281,6 +294,37 @@ def _ranked(candidates: list[tuple[str, dict]], kind: str, lat: float, lon: floa
     return places[:PLACES_PER_GROUP]
 
 
+def _widen_empty_food(food_searches: list[tuple], fresh: dict[tuple, dict], started: float) -> bool:
+    """
+    Repeats food searches that found nothing, out to FOOD_WIDE_RADIUS_KM, in one more Overpass request,
+    updating fresh in place. Returns False when that round couldn't run or failed (so the empty results
+    aren't cached), True otherwise.
+    """
+    empty = [s for s in food_searches if not fresh[_cache_key(*s)]["places"]]
+    if not empty:
+        return True
+    near_mi = round(FOOD_RADIUS_KM / 1.609344, 1)
+    wide_mi = round(FOOD_WIDE_RADIUS_KM / 1.609344, 1)
+    left = OVERPASS_BUDGET_S - (time.monotonic() - started)
+    if left < WIDE_ROUND_MIN_S:
+        for s in empty:
+            fresh[_cache_key(*s)]["note"] = f"Nothing within {near_mi} mi; no time left to search further"
+        return False
+    try:
+        candidates = _candidates(_overpass(build_query(empty, FOOD_WIDE_RADIUS_KM), left))
+    except PlacesError as e:
+        for s in empty:
+            fresh[_cache_key(*s)]["note"] = f"Nothing within {near_mi} mi; the wider search failed: {e}"
+        return False
+    for kind, lat, lon in empty:
+        found = _ranked(candidates, kind, lat, lon, FOOD_WIDE_RADIUS_KM)
+        note = (f"Nothing within {near_mi} mi, so searched out to {wide_mi} mi" if found
+                else f"Nothing within {wide_mi} mi")
+        fresh[_cache_key(kind, lat, lon)] = {"places": found, "source": "openstreetmap",
+                                             "radius_km": FOOD_WIDE_RADIUS_KM, "note": note}
+    return True
+
+
 def find_places(points: list[dict]) -> list[dict]:
     """
     points: [{"near": label, "lat", "lon", "kinds": ["camping", "food"]}].
@@ -288,16 +332,19 @@ def find_places(points: list[dict]) -> list[dict]:
         {"near", "kind", "lat", "lon", "radius_mi", "source", "places": [...], "note"?}
     each group's places ranked best first, at most PLACES_PER_GROUP.
 
-    One Overpass request covers every search not already cached. If Overpass is down, food falls back
-    to OpenRouteService (within about 2 miles) and campsites come back empty with a note saying why.
+    One Overpass request covers every search not already cached; food searches that find nothing are
+    repeated once out to FOOD_WIDE_RADIUS_KM, all within OVERPASS_BUDGET_S. If Overpass is down, food
+    falls back to OpenRouteService (within about 1.6 miles) and campsites come back empty with a note.
     """
+    started = time.monotonic()
     searches = list(dict.fromkeys((kind, p["lat"], p["lon"]) for p in points for kind in dict.fromkeys(p["kinds"])))
     missing = [s for s in searches if _cached(_cache_key(*s)) is None]
-    fresh: dict[tuple, dict] = {}  # this call's uncached results: key -> {"places", "source", "note"}
+    # this call's uncached results: key -> {"places", "source", "radius_km", "note"?}
+    fresh: dict[tuple, dict] = {}
 
     if missing:
         try:
-            candidates = _candidates(_overpass(build_query(missing)))
+            candidates = _candidates(_overpass(build_query(missing), OVERPASS_BUDGET_S))
         except PlacesError as e:
             for kind, lat, lon in missing:
                 key = _cache_key(kind, lat, lon)
@@ -305,27 +352,30 @@ def find_places(points: list[dict]) -> list[dict]:
                     fresh[key] = {"places": [], "source": "none", "note": f"Campsite search unavailable: {e}"}
                     continue
                 try:
-                    found = _ranked(_candidates(_ors_food(lat, lon)), "food", lat, lon, ORS_FOOD_HALF_SIDE_KM)
-                    fresh[key] = {"places": found, "source": "openrouteservice",
-                                  "note": f"{e}; searched a smaller area (about 2 miles) instead"}
+                    half = ors_half_side_km(lat)
+                    found = _ranked(_candidates(_ors_food(lat, lon)), "food", lat, lon, half)
+                    fresh[key] = {"places": found, "source": "openrouteservice", "radius_km": half,
+                                  "note": f"{e}; searched a smaller area ({half / 1.609344:.1f} mi) instead"}
                 except Exception as fallback:  # noqa: BLE001 - reported in the note
                     fresh[key] = {"places": [], "source": "none",
                                   "note": f"Food search unavailable: {e}; fallback failed: {fallback}"}
         else:
             for kind, lat, lon in missing:
                 radius = CAMPING_RADIUS_KM if kind == "camping" else FOOD_RADIUS_KM
-                result = {"places": _ranked(candidates, kind, lat, lon, radius), "source": "openstreetmap"}
-                _store(_cache_key(kind, lat, lon), result)  # only complete answers are cached
-                fresh[_cache_key(kind, lat, lon)] = result
+                fresh[_cache_key(kind, lat, lon)] = {"places": _ranked(candidates, kind, lat, lon, radius),
+                                                     "source": "openstreetmap", "radius_km": radius}
+            complete = _widen_empty_food([s for s in missing if s[0] == "food"], fresh, started)
+            for kind, lat, lon in missing:
+                key = _cache_key(kind, lat, lon)
+                if kind == "camping" or complete:  # only complete answers are cached
+                    _store(key, fresh[key])
 
     groups = []
     for p in points:
         for kind in dict.fromkeys(p["kinds"]):
             key = _cache_key(kind, p["lat"], p["lon"])
             result = fresh.get(key) or _cached(key) or {"places": [], "source": "none"}
-            radius = CAMPING_RADIUS_KM if kind == "camping" else FOOD_RADIUS_KM
-            if result["source"] == "openrouteservice":
-                radius = ORS_FOOD_HALF_SIDE_KM
+            radius = result.get("radius_km") or (CAMPING_RADIUS_KM if kind == "camping" else FOOD_RADIUS_KM)
             group = {
                 "near": p["near"],
                 "kind": kind,

@@ -15,7 +15,8 @@ def find_places(points: list[dict]) -> dict:
 TOOL_SCHEMA = {
     "name": "find_places",
     "description": (
-        "Finds campsites (within about 15 miles) and places to eat (within about 3 miles) near points on the trip, "
+        "Finds campsites (within about 15 miles) and places to eat (within about 3 miles, or 12 when nothing is "
+        "closer; the group's radius_mi and note say which) near points on the trip, "
         "from OpenStreetMap. One call takes every point: each overnight stop from plan_stops with kinds "
         "['camping', 'food'], and each lunch stop from plan_stops (lunch_stops) with kinds ['food']. Returns one "
         "group per point and kind, its places ranked best first, each with an id, name, distance_mi from the point "

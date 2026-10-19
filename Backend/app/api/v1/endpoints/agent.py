@@ -150,7 +150,8 @@ def _last_result(steps, tool: str):
 
 
 def _stop_label(stop: dict) -> str:
-    name = stop.get("name") or ""
+    # "San Benito County, California, United States" -> "San Benito County"
+    name = (stop.get("name") or "").split(",")[0]
     if stop.get("kind") == "lunch":
         return f"Lunch, day {stop.get('day')} · near {name}"
     if stop.get("kind") == "destination":

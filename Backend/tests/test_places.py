@@ -47,7 +47,7 @@ def fresh_cache():
 def overpass(monkeypatch):
     queries = []
 
-    def fake(query):
+    def fake(query, budget_s=None):
         queries.append(query)
         return ELEMENTS
 
@@ -90,7 +90,7 @@ def test_a_better_described_campsite_can_outrank_a_slightly_closer_one(overpass,
     # moved to 1.5 mi, the better-described site wins: 1.5 - 2.25 < 0.7
     closer = [dict(e, lat=36.8635) if e["id"] == 1 else e for e in ELEMENTS]
     ps.clear_cache()
-    monkeypatch.setattr(ps, "_overpass", lambda query: closer)
+    monkeypatch.setattr(ps, "_overpass", lambda query, budget_s=None: closer)
     assert by(ps.find_places([STOP]), "1-1", "camping")["places"][0]["name"] == "Lodge Camp"
 
 
@@ -108,7 +108,7 @@ def test_queries_use_boxes_not_around():
 
 
 def test_when_overpass_is_down_food_falls_back_and_camping_says_why(monkeypatch):
-    def down(query):
+    def down(query, budget_s=None):
         raise ps.PlacesError("OpenStreetMap (Overpass) did not answer within 50 s", timed_out=True)
 
     monkeypatch.setattr(ps, "_overpass", down)
@@ -119,13 +119,54 @@ def test_when_overpass_is_down_food_falls_back_and_camping_says_why(monkeypatch)
     assert camping["places"] == [] and camping["source"] == "none"
     assert camping["note"].startswith("Campsite search unavailable: OpenStreetMap (Overpass) did not answer")
     assert [p["name"] for p in food["places"]] == ["Valley Pizzeria"]
-    assert food["source"] == "openrouteservice" and "about 2 miles" in food["note"]
-    assert food["radius_mi"] == pytest.approx(2.1)
+    assert food["source"] == "openrouteservice" and "searched a smaller area (1.6 mi) instead" in food["note"]
+    assert food["radius_mi"] == 1.6
     # failures are not cached: the next call tries Overpass again
     calls = []
-    monkeypatch.setattr(ps, "_overpass", lambda q: calls.append(q) or [])
+    monkeypatch.setattr(ps, "_overpass", lambda q, budget_s=None: calls.append(q) or [])
     ps.find_places([STOP])
-    assert len(calls) == 1
+    assert calls and 'nwr["tourism"' in calls[0] and 'nwr["amenity"' in calls[0]
+
+
+REMOTE = {"near": "2-1", "lat": 35.0, "lon": -120.0, "kinds": ["camping", "food"]}
+
+
+def test_food_found_nowhere_near_is_searched_again_further_out(monkeypatch):
+    # first round: a campsite but no food within 5 km; second round: a diner 15 km (9.3 mi) away
+    rounds = []
+
+    def fake(query, budget_s=None):
+        rounds.append((query, budget_s))
+        if len(rounds) == 1:
+            return [element(20, 35.05, -120.0, tourism="camp_site", name="Remote Camp")]
+        return [element(21, 35.135, -120.0, amenity="restaurant", name="Highway Diner")]
+
+    monkeypatch.setattr(ps, "_overpass", fake)
+    groups = ps.find_places([REMOTE])
+    food = by(groups, "2-1", "food")
+    assert [p["name"] for p in food["places"]] == ["Highway Diner"]
+    assert food["places"][0]["distance_mi"] == 9.3
+    assert food["radius_mi"] == 12.4
+    assert food["note"] == "Nothing within 3.1 mi, so searched out to 12.4 mi"
+    assert by(groups, "2-1", "camping")["radius_mi"] == 15.5
+    # the second round asks only for the food, over the wider box, with what's left of the budget
+    assert len(rounds) == 2 and 'nwr["tourism"' not in rounds[1][0]
+    assert rounds[1][1] <= ps.OVERPASS_BUDGET_S
+    # and the widened answer is cached
+    ps.find_places([REMOTE])
+    assert len(rounds) == 2
+
+
+def test_no_time_for_the_wider_round_leaves_food_empty_and_uncached(monkeypatch):
+    rounds = []
+    monkeypatch.setattr(ps, "_overpass", lambda q, budget_s=None: rounds.append(q) or [])
+    clock = iter([0.0, ps.OVERPASS_BUDGET_S - 5, 0.0, 0.0, 0.0, 0.0])
+    monkeypatch.setattr(ps.time, "monotonic", lambda: next(clock, 0.0))
+    food = by(ps.find_places([REMOTE]), "2-1", "food")
+    assert food["places"] == [] and "no time left" in food["note"]
+    assert len(rounds) == 1
+    assert ps._cached(ps._cache_key("food", 35.0, -120.0)) is None  # noqa: SLF001
+    assert ps._cached(ps._cache_key("camping", 35.0, -120.0)) is not None  # noqa: SLF001
 
 
 def test_endpoint_validates_and_attributes(overpass):
