@@ -1,0 +1,3 @@
+# Test and lint tools, pinned. Install with: pip install -r requirements.lock -r requirements-dev.txt
+pytest==9.1.1
+ruff==0.17.1
