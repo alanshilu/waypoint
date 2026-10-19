@@ -22,7 +22,8 @@ TOOL_SCHEMA = {
     "description": (
         "Splits one of the trip's routes into driving days of at most max_hours each. Returns every overnight stop "
         "and the destination with a stable id, a reverse-geocoded name, cumulative miles and driving hours, the "
-        "arrival_date, and the forecast for that arrival date (null when unavailable). Use it for multi-day drives, "
+        "arrival_date, and the forecast for that arrival date (null when unavailable), plus lunch_stops: where "
+        "each day's driving reaches noon, with an id and a name. Use it for multi-day drives, "
         "for any question about where to stop or stay, and before saying anything about weather on the trip."
     ),
     "strict": True,

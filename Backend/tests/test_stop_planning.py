@@ -65,3 +65,37 @@ def test_rejects_bad_input():
         plan_stops([[0, 0]], 3600, 10, START)
     with pytest.raises(ValueError):
         plan_stops(LINE, 3600, 10, START, segment_durations=[1, 2])
+
+
+# ---- lunch_stops ----
+
+from app.services.stop_planning import lunch_stops  # noqa: E402
+
+
+def test_lunch_is_where_the_clock_reads_noon_each_day():
+    # 20 h at 8 h/day from 08:00: noon is 4 h into days 1 and 2 (20% and 60% of the way) and day 3
+    # (4 h of driving, ending at noon) has no driving after noon, so no lunch point
+    lunches = lunch_stops(LINE, 20 * 3600, 600, START, 8)
+    assert [(lunch["day"], lunch["kind"]) for lunch in lunches] == [(1, "lunch"), (2, "lunch")]
+    assert lunches[0]["lon"] == pytest.approx(2.0)
+    assert lunches[1]["lon"] == pytest.approx(6.0)
+    assert [lunch["cumulative_miles"] for lunch in lunches] == [120.0, 360.0]
+    assert [lunch["time"] for lunch in lunches] == ["2026-10-17T12:00-05:00", "2026-10-18T12:00-05:00"]
+
+
+def test_no_lunch_on_the_road_when_the_day_starts_after_noon_or_ends_by_it():
+    afternoon = START.replace(hour=13)
+    assert lunch_stops(LINE, 5 * 3600, 300, afternoon, 8) == []
+    # 08:00 + 4 h 20 min of driving ends 12:20: under the 30 minutes of driving needed after noon
+    assert lunch_stops(LINE, 4 * 3600 + 1200, 260, START, 8) == []
+    # 08:00 + 5 h: an hour of driving after noon, so lunch at 80% of the way
+    (lunch,) = lunch_stops(LINE, 5 * 3600, 300, START, 8)
+    assert lunch["lon"] == pytest.approx(8.0)
+
+
+def test_lunch_follows_the_same_pace_as_the_stops():
+    # an 8 h day from 08:00 whose first half takes 2 h and second half 6 h
+    durations = [2 * 3600 / 5] * 5 + [6 * 3600 / 5] * 5
+    (lunch,) = lunch_stops(LINE, 8 * 3600, 600, START, 8, segment_durations=durations)
+    # 4 h in: 2 h covered the first half, then 2 of the second half's 6 h, a third of the way along it
+    assert lunch["lon"] == pytest.approx(5 + 5 / 3)

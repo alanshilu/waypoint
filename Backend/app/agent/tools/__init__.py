@@ -9,6 +9,7 @@ _MODULE_NAMES = [
     "search_pois",
     "get_weather",
     "plan_stops",
+    "find_places",
 ]
 
 

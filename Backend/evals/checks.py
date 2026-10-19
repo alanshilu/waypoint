@@ -118,6 +118,24 @@ def plan_stops_of(steps) -> list[dict]:
     return stops
 
 
+def lunch_stops_of(steps) -> list[dict]:
+    lunches = []
+    for _, result in results(steps, "plan_stops"):
+        if isinstance(result, dict):
+            lunches.extend(result.get("lunch_stops") or [])
+    return lunches
+
+
+def found_places_of(steps) -> list[dict]:
+    """Every place a find_places call returned."""
+    places = []
+    for _, result in results(steps, "find_places"):
+        if isinstance(result, dict):
+            for group in result.get("groups") or []:
+                places.extend(group.get("places") or [])
+    return places
+
+
 def plan_starts_of(steps) -> list[str]:
     return [r.get("start") for _, r in results(steps, "plan_stops") if isinstance(r, dict) and r.get("start")]
 
@@ -484,7 +502,7 @@ NOT_PLACES = {
 
 def _source_text(steps, prompts) -> str:
     parts = list(prompts)
-    for tool in ("geocode_location", "plan_stops", "search_pois", "create_trip", "generate_routes"):
+    for tool in ("geocode_location", "plan_stops", "search_pois", "find_places", "create_trip", "generate_routes"):
         for _, result in results(steps, tool):
             parts.append(json.dumps(result, default=str))
     return " ".join(parts).lower()
@@ -500,6 +518,11 @@ def stops_grounded(session: Session) -> CheckResult:
             for stop_id in turn.final_answer.get("stops") or []:
                 if str(stop_id) not in ids:
                     evidence.append(f"turn {i + 1}: final_answer stop id {stop_id!r} is not a plan_stops id")
+            place_ids = {str(p.get("id")) for p in found_places_of(steps)}
+            for place in turn.final_answer.get("places") or []:
+                place_id = place.get("id") if isinstance(place, dict) else place
+                if str(place_id) not in place_ids:
+                    evidence.append(f"turn {i + 1}: final_answer place id {place_id!r} is not a find_places result")
         text = reply_text(turn)
         sources = _source_text(steps, [t.prompt for t in session.turns[: i + 1]])
         seen = set()
@@ -587,23 +610,26 @@ def poi_coords_grounded(session: Session) -> CheckResult:
         steps = session_steps(session, i)
         points = [(r["lat"], r["lon"]) for _, r in results(steps, "geocode_location")
                   if isinstance(r, dict) and "lat" in r]
-        points += [(st["lat"], st["lon"]) for st in plan_stops_of(steps)]
+        points += [(st["lat"], st["lon"]) for st in plan_stops_of(steps) + lunch_stops_of(steps)]
         routes = routes_of(steps)
         selected_ids = {s.args.get("route_id") for s in steps if s.tool == "select_route" and s.error is None}
         selected = [r for r in routes if r.get("id") in selected_ids] or routes
         lines = [route_coords(r) for r in selected]
         for s in turn.steps:
-            if s.tool != "search_pois" or s.error is not None:
+            if s.tool not in ("search_pois", "find_places") or s.error is not None:
                 continue
-            lat, lon = s.args.get("lat"), s.args.get("lon")
-            near_point = min((haversine_km(lat, lon, a, b) for a, b in points), default=math.inf)
-            near_route = min((distance_to_line_km(lat, lon, c) for c in lines), default=math.inf)
-            if min(near_point, near_route) <= NEAR_KM:
-                notes.append(f"turn {i + 1}: search_pois at {lat},{lon} is {min(near_point, near_route):.1f} km from a grounded point")
-            else:
-                evidence.append(
-                    f"turn {i + 1}: search_pois at {lat},{lon} is {near_point:.0f} km from any geocode/plan_stops point "
-                    f"and {near_route:.0f} km from the route")
+            searched = ([(s.args.get("lat"), s.args.get("lon"))] if s.tool == "search_pois"
+                        else [(p.get("lat"), p.get("lon")) for p in s.args.get("points") or []])
+            for lat, lon in searched:
+                near_point = min((haversine_km(lat, lon, a, b) for a, b in points), default=math.inf)
+                near_route = min((distance_to_line_km(lat, lon, c) for c in lines), default=math.inf)
+                if min(near_point, near_route) <= NEAR_KM:
+                    notes.append(f"turn {i + 1}: {s.tool} at {lat},{lon} is {min(near_point, near_route):.1f} km "
+                                 "from a grounded point")
+                else:
+                    evidence.append(
+                        f"turn {i + 1}: {s.tool} at {lat},{lon} is {near_point:.0f} km from any geocode/plan_stops "
+                        f"point and {near_route:.0f} km from the route")
     return CheckResult(not evidence, evidence, notes)
 
 

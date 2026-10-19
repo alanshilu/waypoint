@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     eval_judge_model: str = Field(default="claude-haiku-5-5", validation_alias="EVAL_JUDGE_MODEL")
     # The agent's tools call this API over HTTP
     api_base_url: str = Field(default="http://localhost:8000", validation_alias="API_BASE_URL")
+    # OpenStreetMap Overpass servers for campsites and places to eat, tried in order (comma-separated).
+    # Free public services with a fair-use policy; results are cached for a day.
+    overpass_urls: str = Field(
+        default="https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter",
+        validation_alias="OVERPASS_URLS",
+    )
     # Seconds to wait for one OpenRouteService directions request; long drives can take a minute when ORS is busy
     ors_route_timeout_s: float = Field(default=90.0, validation_alias="ORS_ROUTE_TIMEOUT_S")
 
@@ -32,8 +38,9 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
 
     # POST /agent/message
-    # Covers a slow route generation (ORS_ROUTE_TIMEOUT_S) plus the other tool and model calls of a turn
-    agent_timeout_s: float = Field(default=180.0, validation_alias="AGENT_TIMEOUT_S")
+    # Covers a slow route generation (ORS_ROUTE_TIMEOUT_S) or place search (up to 75 s on a busy
+    # Overpass day) plus the other tool and model calls of a turn
+    agent_timeout_s: float = Field(default=240.0, validation_alias="AGENT_TIMEOUT_S")
     agent_rate_limit_per_minute: int = Field(default=10, validation_alias="AGENT_RATE_LIMIT_PER_MINUTE")
     agent_session_ttl_s: int = Field(default=1800, validation_alias="AGENT_SESSION_TTL_S")
     # Cost limits for a public demo; 0 turns a limit off. The daily cap resets at midnight UTC.
@@ -53,6 +60,10 @@ class Settings(BaseSettings):
         if self.public_demo and not self.internal_api_secret:
             raise ValueError("PUBLIC_DEMO=true needs INTERNAL_API_SECRET, or the agent cannot create trips")
         return self
+
+    @property
+    def overpass_url_list(self) -> list[str]:
+        return [u.strip() for u in self.overpass_urls.split(",") if u.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

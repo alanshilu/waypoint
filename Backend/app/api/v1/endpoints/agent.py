@@ -149,6 +149,40 @@ def _last_result(steps, tool: str):
             yield step
 
 
+def _stop_label(stop: dict) -> str:
+    name = stop.get("name") or ""
+    if stop.get("kind") == "lunch":
+        return f"Lunch, day {stop.get('day')} · near {name}"
+    if stop.get("kind") == "destination":
+        return name
+    return f"Night {stop.get('day')} · {name}"
+
+
+def place_groups(steps, answer: dict) -> list[dict]:
+    """
+    This turn's find_places groups for the map and list, each labelled with the stop it belongs to,
+    and each recommended place marked with the agent's reason. Ids the answer names that no group
+    returned are dropped, so the app only highlights places the search actually found.
+    """
+    labels: dict[str, str] = {}
+    for step in steps:
+        if step.tool == "plan_stops" and step.error is None and isinstance(step.full_result, dict):
+            for stop in (step.full_result.get("stops") or []) + (step.full_result.get("lunch_stops") or []):
+                labels[str(stop.get("id"))] = _stop_label(stop)
+    reasons = {str(p.get("id")): str(p.get("reason") or "") for p in answer.get("places") or [] if isinstance(p, dict)}
+
+    groups = []
+    for step in steps:
+        if step.tool != "find_places" or step.error is not None or not isinstance(step.full_result, dict):
+            continue
+        for group in step.full_result.get("groups") or []:
+            places = [{**place, "recommended": place["id"] in reasons, "reason": reasons.get(place["id"]) or None}
+                      for place in group.get("places") or []]
+            groups.append({**group, "label": labels.get(str(group.get("near")), str(group.get("near"))),
+                           "places": places})
+    return groups
+
+
 def build_response(session: Session, turn: orchestrator.AgentTurn) -> dict[str, Any]:
     answer = turn.final_answer or {}
 
@@ -167,6 +201,8 @@ def build_response(session: Session, turn: orchestrator.AgentTurn) -> dict[str, 
                 known[str(stop.get("id"))] = stop
     planned_stops = [known[s] for s in answer.get("stops") or [] if s in known]
 
+    places = place_groups(turn.steps, answer)
+
     poi_step = next(_last_result(turn.steps, "search_pois"), None)
     pois = None
     if poi_step:
@@ -179,6 +215,7 @@ def build_response(session: Session, turn: orchestrator.AgentTurn) -> dict[str, 
         "reply": turn.reply,
         "answer": answer,
         "planned_stops": planned_stops,
+        "places": places,
         "pois": pois,
         "tool_calls": [
             {"tool": s.tool, "ms": s.ms, "cached": s.cached, "error": s.error, "tokens": s.tokens,

@@ -13,7 +13,7 @@ from app.models.route import Route
 from app.models.trip import Trip
 from app.schemas.trip import TripCreate
 from app.services.geocoding_service import reverse_geocode
-from app.services.stop_planning import plan_stops
+from app.services.stop_planning import lunch_stops, plan_stops
 from app.services.trip_matching import REUSE_WINDOW, recent_enough, same_trip
 from app.services.weather_service import get_forecast_for_date, get_utc_offset_seconds
 
@@ -116,6 +116,7 @@ PLAN_NOTES = [
     "Overnight points are where each day's driving time runs out; names come from reverse geocoding, "
     "or 'near <lat>,<lon>' when that fails.",
     "forecast is null when the arrival date is more than 15 days away or the lookup fails.",
+    "lunch_stops are where each day's driving reaches noon; the lunch break is not added to driving times.",
 ]
 
 
@@ -170,6 +171,11 @@ def plan_trip_stops(
         except Exception:  # noqa: BLE001 - a missing forecast must not lose the plan
             stop["forecast"] = None
 
+    lunches = lunch_stops(coords, route.duration_seconds, route.distance_miles, start, max_hours)
+    for lunch in lunches:
+        lunch["id"] = f"{route.id}-{lunch['day']}-lunch"
+        lunch["name"] = reverse_geocode(lunch["lat"], lunch["lon"])
+
     return {
         "trip_id": trip.id,
         "route_id": route.id,
@@ -179,5 +185,6 @@ def plan_trip_stops(
         "max_drive_hours_per_day": max_hours,
         "days": len(stops),
         "stops": stops,
+        "lunch_stops": lunches,
         "notes": notes,
     }

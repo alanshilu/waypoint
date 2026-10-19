@@ -46,9 +46,19 @@ FINAL_ANSWER_SCHEMA = {
             "additionalProperties": False,
         },
         "stops": {"type": "array", "items": {"type": "string"}, "description": "plan_stops stop ids"},
+        "places": {
+            "type": "array",
+            "description": "recommended find_places places",
+            "items": {
+                "type": "object",
+                "properties": {"id": {"type": "string"}, "reason": {"type": "string"}},
+                "required": ["id", "reason"],
+                "additionalProperties": False,
+            },
+        },
         "warnings": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["summary", "recommended_route_type", "departure_window", "stops", "warnings"],
+    "required": ["summary", "recommended_route_type", "departure_window", "stops", "places", "warnings"],
     "additionalProperties": False,
 }
 
@@ -231,7 +241,7 @@ def _run_turn(
         if response.stop_reason == "refusal":
             category = getattr(response.stop_details, "category", None) if response.stop_details else None
             answer = {"summary": "I can't help with that request.", "recommended_route_type": "none",
-                      "departure_window": {"start": "", "end": "", "reason": ""}, "stops": [],
+                      "departure_window": {"start": "", "end": "", "reason": ""}, "stops": [], "places": [],
                       "warnings": [f"The model declined this request ({category or 'no category'})."]}
             return AgentTurn(render_reply(answer), messages, steps, usage, answer)
 
@@ -242,7 +252,7 @@ def _run_turn(
             except json.JSONDecodeError:
                 # only reachable on max_tokens, where the JSON can be cut off
                 answer = {"summary": text, "recommended_route_type": "none",
-                          "departure_window": {"start": "", "end": "", "reason": ""}, "stops": [],
+                          "departure_window": {"start": "", "end": "", "reason": ""}, "stops": [], "places": [],
                           "warnings": [f"The answer was cut off (stop_reason={response.stop_reason})."]}
             return AgentTurn(render_reply(answer), messages, steps, usage, answer)
 

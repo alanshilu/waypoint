@@ -46,8 +46,9 @@ def has_road_trip_category(feature: dict) -> bool:
 
     return bool(category_names & ROAD_TRIP_CATEGORIES)
 
-def fetch_pois_from_ors(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> list[dict]:
-    """Fetches POIs within a bounding box from ORS."""
+def fetch_pois_from_ors(min_lon: float, min_lat: float, max_lon: float, max_lat: float,
+                        category_ids: list[int] | None = None) -> list[dict]:
+    """Fetches POIs within a bounding box from ORS, optionally only these ORS category ids."""
     body = {
         "request": "pois",
         "geometry": {
@@ -55,6 +56,8 @@ def fetch_pois_from_ors(min_lon: float, min_lat: float, max_lon: float, max_lat:
         },
         "limit": 500
     }
+    if category_ids:
+        body["filters"] = {"category_ids": category_ids}
 
     req = request.Request(URL, data=json.dumps(body).encode("utf-8"), headers=HEADERS, method="POST")
 
