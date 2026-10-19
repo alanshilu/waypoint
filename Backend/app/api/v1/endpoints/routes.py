@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from geoalchemy2.shape import to_shape # ADDED: to convert PostGIS binary to Python
+from app.api.deps import internal_only
 from app.core.db import get_db
 from app.models.trip import Trip
 from app.services.routing_service import RoutingError, get_route_options
@@ -14,7 +15,7 @@ router = APIRouter()
 ROUTE_TYPES = ("fastest", "backroads")
 
 
-@router.post("/generate/{trip_id}")
+@router.post("/generate/{trip_id}", dependencies=[Depends(internal_only)])
 def generate_and_save_routes(
     trip_id: int,
     reuse_existing: bool = Query(False, description="Return the trip's existing routes instead of generating new ones"),
@@ -61,7 +62,7 @@ def generate_and_save_routes(
         "reused": False,
         "routes": add_duration_ratios([route_to_dict(r) for r in db_routes])
     }
-@router.post("/select/{route_id}")
+@router.post("/select/{route_id}", dependencies=[Depends(internal_only)])
 def select_route(route_id: int, db: Session = Depends(get_db)):
     """
     Marks a specific route as selected and links it to the parent trip.

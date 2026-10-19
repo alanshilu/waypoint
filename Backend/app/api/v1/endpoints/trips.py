@@ -6,6 +6,7 @@ from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
 from sqlalchemy.orm import Session
 
+from app.api.deps import internal_only, not_in_public_demo
 from app.api.v1.serializers import DEFAULT_SIMPLIFY_TOLERANCE, trip_to_dict
 from app.core.db import get_db
 from app.models.route import Route
@@ -18,7 +19,7 @@ from app.services.weather_service import get_forecast_for_date, get_utc_offset_s
 
 router = APIRouter()
 
-@router.post("/")
+@router.post("/", dependencies=[Depends(internal_only)])
 def create_trip(
     payload: TripCreate,
     reuse_recent: bool = Query(False, description="Return an existing trip with the same ends from the last 24 h"),
@@ -65,7 +66,7 @@ def create_trip(
         "trip_id": new_trip.id,
         "reused": False,
     }
-@router.get("/trips")
+@router.get("/trips", dependencies=[Depends(not_in_public_demo)])
 def list_trips(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     # Fetches a limited number of trips, ordered by newest first
     trips = db.query(Trip).order_by(Trip.created_at.desc()).offset(skip).limit(limit).all()

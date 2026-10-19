@@ -22,6 +22,8 @@ import type {
 /** Mock mode is the default; set VITE_USE_MOCK=false to call the backend. */
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+/** Matches the backend's PUBLIC_DEMO: route writes are agent-only, so a route picked on the map stays in the browser. */
+export const PUBLIC_DEMO = import.meta.env.VITE_PUBLIC_DEMO === "true";
 
 const tripFixture = tripFixtureJson as unknown as Trip;
 const poisFixture = poisFixtureJson as unknown as {

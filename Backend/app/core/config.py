@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     agent_daily_turn_cap: int = Field(default=200, validation_alias="AGENT_DAILY_TURN_CAP")
     # User turns kept per session; older turns are dropped from the front
     agent_history_max_turns: int = Field(default=12, validation_alias="AGENT_HISTORY_MAX_TURNS")
+
+    # Public deployment: GET /trips/trips is off, and the trip and route write endpoints only answer
+    # callers that send INTERNAL_API_SECRET in the X-Waypoint-Internal header (the agent's tools do)
+    public_demo: bool = Field(default=False, validation_alias="PUBLIC_DEMO")
+    internal_api_secret: str | None = Field(default=None, validation_alias="INTERNAL_API_SECRET")
+
+    @model_validator(mode="after")
+    def _public_demo_needs_a_secret(self):
+        if self.public_demo and not self.internal_api_secret:
+            raise ValueError("PUBLIC_DEMO=true needs INTERNAL_API_SECRET, or the agent cannot create trips")
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

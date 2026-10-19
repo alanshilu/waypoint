@@ -224,6 +224,8 @@ export function TripProvider({ children }: { children: ReactNode }) {
     if (routeId === previous) return;
     dispatch({ type: "ROUTE_SELECTED", routeId });
     pickedRouteId.current = routeId;
+    // In the public demo only the agent writes routes; the pick reaches it with the next message
+    if (api.PUBLIC_DEMO && !api.USE_MOCK) return;
     api.selectRoute(routeId).catch((error: unknown) => {
       pickedRouteId.current = null;
       dispatch({ type: "ROUTE_SELECTED", routeId: previous });

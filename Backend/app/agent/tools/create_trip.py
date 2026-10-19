@@ -1,6 +1,7 @@
 import requests
 
 from app.agent.tools.geocode_location import BASE_URL
+from app.core.internal import internal_headers
 
 
 def create_trip(name, origin_label, origin_lat, origin_lon,
@@ -18,7 +19,8 @@ def create_trip(name, origin_label, origin_lat, origin_lon,
         "destination_lat": destination_lat,
         "destination_lon": destination_lon,
     }
-    response = requests.post(f"{BASE_URL}/trips/", params={"reuse_recent": "true"}, json=payload, timeout=10)
+    response = requests.post(f"{BASE_URL}/trips/", params={"reuse_recent": "true"}, json=payload,
+                             headers=internal_headers(), timeout=10)
     response.raise_for_status()
     return response.json()  # {"trip_id": ..., "reused": bool}
 
