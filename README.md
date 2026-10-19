@@ -158,7 +158,7 @@ The tests cover the following, with the model stubbed out:
 
 - the agent HTTP API: sessions, rate limits, timeouts, streaming and error shapes
 - the demo's cost limits, its endpoint locks and bring-your-own-key handling
-- `/health`
+- `/health` and `/ready`
 - every eval check, on synthetic sessions
 - the scenic score, stop planning and trip matching
 - arrival-date weather across time zones
@@ -271,7 +271,8 @@ Serve the app over HTTPS so the key is encrypted in transit.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | 200 when the app is up and the database answers, else 503 |
+| GET | `/health` | Liveness: 200 while the process is up; never touches the database |
+| GET | `/ready` | Readiness: 200 when the database answers `SELECT 1`, else 503 |
 | POST | `/agent/sessions` | Start a conversation |
 | POST | `/agent/message` | One agent turn, JSON response |
 | POST | `/agent/message/stream` | The same turn as server-sent events: `tool_start`, `tool_end`, then `final` |
@@ -332,7 +333,7 @@ Planned work, roughly in order:
 - [x] Handle ORS timeouts as a clear 502/504 and request both routes in parallel
 - [x] The whole stack (PostGIS, backend, frontend) in `docker-compose.yml`
 - [x] CI on every push: `ruff`, `pytest`, frontend typecheck and build
-- [x] Public-demo hardening: pinned dependencies, `/health`, cost limits, agent-only writes
+- [x] Public-demo hardening: pinned dependencies, `/health` and `/ready`, cost limits, agent-only writes
 - [ ] Retry ORS with backoff, and show the failed tool call as failed in the chat checklist (today a handled ORS failure is listed as done, with the reason in the reply)
 - [ ] Redis-backed sessions and cost counters behind the existing `SessionStore` interface, for multiple workers and restarts
 - [ ] Per-IP limits on the read endpoints that spend ORS and Open-Meteo quota
