@@ -12,3 +12,6 @@ typings/
 .ruff_cache/
 .vscode/
 docker-compose.yml
+*.log
+.coverage
+htmlcov/
