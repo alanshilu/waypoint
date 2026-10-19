@@ -31,6 +31,7 @@ Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leav
 - **Grounded answers.** The agent may only state numbers, dates and places that appear in its tool results, and it reports a failed tool rather than filling the gap.
 - **Visible reasoning.** Each tool call streams to the chat as it runs (server-sent events), and a trace drawer shows latency, cache hits and errors per call.
 - **Mock mode.** The frontend runs entirely from fixtures, with no backend or API keys, for demos and UI work.
+- **Ready for a public demo.** One `docker compose up` starts everything. Cost limits cap agent use per visitor and per day, and a demo mode makes all trip and route writes agent-only.
 
 ## Screenshots
 
@@ -139,26 +140,51 @@ A full run costs well under $1 at the time of writing and stops itself at `--max
 
 ## Tests and checks
 
-Results on 2026-10-18:
+[GitHub Actions](.github/workflows/ci.yml) runs these on every push. Results on 2026-10-19:
 
 | Check | Command | Result |
 |---|---|---|
-| Backend unit and API tests | `pytest` | 102 passed in 10.8 s |
+| Backend unit and API tests | `pytest` | 124 passed in 8.7 s |
 | Python lint | `ruff check .` | All checks passed |
 | Frontend types | `npm run typecheck` | 0 errors |
+| Frontend production build | `npm run build` | Builds |
 
-The tests cover the agent HTTP API (sessions, rate limits, timeouts, streaming, error shapes) with the model stubbed out, every eval check on synthetic sessions, the scenic score, stop planning, trip matching, arrival-date weather across time zones, and route generation when OpenRouteService is slow or failing. They make no network calls, but the app reads its settings at import time, so a `Backend/.env` must exist (copying `.env.example` is enough).
+The tests cover the following, with the model stubbed out:
+
+- the agent HTTP API: sessions, rate limits, timeouts, streaming and error shapes
+- the demo's cost limits and its endpoint locks
+- `/health`
+- every eval check, on synthetic sessions
+- the scenic score, stop planning and trip matching
+- arrival-date weather across time zones
+- route generation when OpenRouteService is slow or failing
+
+They make no network or database calls. The app reads its settings at import time, from `Backend/.env` or the environment; CI sets dummy values.
 
 ## Getting started
 
-### Prerequisites
+You need an [OpenRouteService](https://openrouteservice.org/dev/#/signup) API key (free tier) and an [Anthropic](https://console.anthropic.com/) API key. The frontend's mock mode needs neither.
+
+### Quick start with Docker
+
+```bash
+cp .env.example .env               # then add ORS_API_KEY and ANTHROPIC_API_KEY
+docker compose up --build
+```
+
+Open http://localhost:8080. Compose starts three containers:
+
+- **db:** PostGIS
+- **backend:** applies the database migrations, then serves the API
+- **frontend:** nginx, which serves the app and proxies `/api` to the backend
+
+Only port 8080 is published. The settings for this setup are in the root [`.env.example`](.env.example).
+
+### Prerequisites for running locally
 
 - Python 3.13
 - Node.js 22
 - PostgreSQL with the PostGIS extension
-- An [OpenRouteService](https://openrouteservice.org/dev/#/signup) API key (free tier) and an [Anthropic](https://console.anthropic.com/) API key
-
-The frontend's mock mode needs only Node.
 
 ### Backend
 
@@ -166,7 +192,7 @@ The frontend's mock mode needs only Node.
 cd Backend
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.lock   # exact versions; requirements.txt has the ranges
 cp .env.example .env               # then fill in the database and API keys
 python -m alembic upgrade head     # creates the tables in your PostGIS database
 python -m uvicorn app.main:app --port 8000
@@ -194,14 +220,41 @@ Open http://localhost:5173. The backend allows CORS from that origin by default 
 ### Running the checks
 
 ```bash
-cd Backend && pip install pytest ruff && pytest && ruff check .
-cd Frontend && npm run typecheck
+cd Backend && pip install -r requirements-dev.txt && ruff check . && pytest
+cd Frontend && npm run typecheck && npm run build
 ```
+
+### Deploying as a public demo
+
+Set these in the root `.env` before `docker compose up --build`:
+
+```bash
+PUBLIC_DEMO=true
+INTERNAL_API_SECRET=<a long random string>
+POSTGRES_PASSWORD=<a strong password>
+```
+
+With `PUBLIC_DEMO=true`:
+
+- `GET /trips/trips` is turned off.
+- Creating trips and generating or selecting routes only works for callers sending the shared secret, which in practice means only the agent.
+- The frontend is built so that a route picked on the map stays in the browser and goes to the agent with the next message.
+- The backend won't start without `INTERNAL_API_SECRET`.
+
+The cost limits are on in every mode. They're set in `Backend/.env.example`, and 0 turns a limit off:
+
+| Setting | Default | When reached |
+|---|---|---|
+| `AGENT_SESSIONS_PER_IP_PER_HOUR` | 5 | 429 `too_many_sessions` |
+| `AGENT_DAILY_TURN_CAP` | 200 agent turns per UTC day, across all users | 429 "Demo limit reached, try again tomorrow" |
+| `AGENT_MAX_SESSIONS` | 200 live sessions | 503 `demo_busy` |
+| `AGENT_SESSION_TTL_S` | 1800 s idle | the session expires |
 
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/health` | 200 when the app is up and the database answers, else 503 |
 | POST | `/agent/sessions` | Start a conversation |
 | POST | `/agent/message` | One agent turn, JSON response |
 | POST | `/agent/message/stream` | The same turn as server-sent events: `tool_start`, `tool_end`, then `final` |
@@ -215,7 +268,7 @@ cd Frontend && npm run typecheck
 | GET | `/pois/`, `/pois/search` | Points of interest |
 | GET | `/weather/current`, `/weather/forecast` | Current weather and forecasts |
 
-Agent endpoints return errors as `{"error": {"code", "message"}}`.
+Agent endpoints return errors as `{"error": {"code", "message"}}`, with `Retry-After` on 429 and 503. With `PUBLIC_DEMO=true`, `GET /trips/trips` returns 404. `POST /trips/`, `/routes/generate/{trip_id}` and `/routes/select/{route_id}` return 403 without the `X-Waypoint-Internal` header.
 
 ## Project structure
 
@@ -231,19 +284,25 @@ Backend/
   alembic/        database migrations (4)
   evals/          eval cases, checks, runner and the baseline/final reports
   tests/          pytest suite
+  Dockerfile      backend image: migrates, then serves; non-root, health check
+  requirements.lock, requirements-dev.txt   pinned dependencies
 Frontend/
   src/
     components/   map, route comparison, elevation profile, chat, trace drawer
     state/        trip state and the chat/agent flow
     fixtures/     mock trip and POIs
-docs/screenshots/ the images in this README
+  Dockerfile, nginx.conf   production build served by nginx, /api proxied to the backend
+.github/workflows/ci.yml   lint, tests, typecheck and build on every push
+docker-compose.yml         PostGIS, backend and frontend
+docs/screenshots/          the images in this README
 ```
 
 ## Known limitations
 
 - **OpenRouteService speed.** Route generation depends on ORS, which can be slow: on 2026-10-18 a single SF to LA request took between 10 s and over 100 s. Both routes are requested in parallel and each may take up to `ORS_ROUTE_TIMEOUT_S` (90 s). Past that, the endpoint returns 504, or 502 for an ORS error, and the agent tells the user to retry. There is no automatic retry yet.
-- **Sessions are in memory.** They are lost on restart, and with several worker processes each worker has its own. Run one worker for now.
-- **No database in docker-compose.** `Backend/docker-compose.yml` starts only Redis; Postgres/PostGIS must be installed separately.
+- **Sessions and cost limits are in memory.** Sessions and the counters behind the cost limits are lost on restart, which also resets the day's turn count. With several worker processes, each one keeps its own. Run one backend process for now.
+- **`PUBLIC_DEMO` covers trips and routes only.** `/location/search`, `/pois/search`, `/weather/*` and `POST /trips/{id}/plan` stay public. They write nothing, but each call spends OpenRouteService or Open-Meteo quota.
+- **The per-IP limit trusts the proxy.** The visitor's address comes from the `X-Forwarded-For` header set by the nginx container. Don't publish the backend's port directly, or a client could set that header itself.
 - **Stop planning assumes a uniform pace** along the route and uses the origin's time zone for the whole trip.
 - **The evals are one sample** and have documented blind spots (place names are found by heuristic; any tool number can ground an equal number in the reply).
 - **US only.** The map and prompt target US road trips.
@@ -253,13 +312,15 @@ docs/screenshots/ the images in this README
 Planned work, roughly in order:
 
 - [x] Handle ORS timeouts as a clear 502/504 and request both routes in parallel
+- [x] The whole stack (PostGIS, backend, frontend) in `docker-compose.yml`
+- [x] CI on every push: `ruff`, `pytest`, frontend typecheck and build
+- [x] Public-demo hardening: pinned dependencies, `/health`, cost limits, agent-only writes
 - [ ] Retry ORS with backoff, and show the failed tool call as failed in the chat checklist (today a handled ORS failure is listed as done, with the reason in the reply)
-- [ ] Postgres/PostGIS in `docker-compose.yml` so the whole stack starts with one command
-- [ ] Redis-backed agent sessions behind the existing `SessionStore` interface, for multiple workers
-- [ ] CI on every push: `pytest`, `ruff` and `npm run typecheck`
+- [ ] Redis-backed sessions and cost counters behind the existing `SessionStore` interface, for multiple workers and restarts
+- [ ] Per-IP limits on the read endpoints that spend ORS and Open-Meteo quota
 - [ ] Repeat eval runs, including against an empty database, to exercise fresh route generation and measure variance
 - [ ] Stop planning with real per-segment pace and time-zone changes along the route
-- [ ] Deployment: a hosted backend and frontend
+- [ ] Hosted public demo
 
 ## License
 
