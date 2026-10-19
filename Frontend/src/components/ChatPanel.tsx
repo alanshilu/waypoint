@@ -4,6 +4,7 @@ import { USE_MOCK } from "../api";
 import { useTrip } from "../state/TripProvider";
 import type { StepView } from "../types";
 import OwnKeyPanel from "./OwnKeyPanel";
+import ServerWaking from "./ServerWaking";
 
 const STARTER_CHIPS = ["San Francisco to Los Angeles"];
 
@@ -82,6 +83,7 @@ export default function ChatPanel() {
           <span className={USE_MOCK ? "mode-badge mock" : "mode-badge"}>{USE_MOCK ? "Mock data" : "Live API"}</span>
         </span>
       </header>
+      <ServerWaking />
 
       <div className="chat-list" ref={listRef} aria-live="polite">
         {messages.length === 0 && (

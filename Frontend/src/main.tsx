@@ -10,7 +10,11 @@ import "@fontsource/courier-prime/latin-700.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
 import App from "./App";
+import { warmUpServer } from "./api";
 import { TripProvider } from "./state/TripProvider";
+
+// A hosted backend may be asleep: start it booting now, while the page loads
+warmUpServer();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -143,6 +143,16 @@ button:disabled {
   gap: 8px;
 }
 
+.server-waking {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--parchment-light);
+  font-size: 13px;
+  color: var(--espresso);
+  border-left: 3px solid var(--warning);
+}
+
 /* Bring your own key: the toggle in the chat head, the form below it */
 .own-key-toggle {
   font-size: 12px;

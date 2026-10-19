@@ -1,6 +1,7 @@
 import tripFixtureJson from "./fixtures/trip.sf-la.json";
 import poisFixtureJson from "./fixtures/pois.json";
 import { getOwnKey } from "./ownKey";
+import { markAwake, markGaveUp, markWaking, mayBeAsleep } from "./serverStatus";
 import type {
   AgentApiResponse,
   AgentStreamEvent,
@@ -50,11 +51,62 @@ export class ApiError extends Error {
 
 // ---- Real transport --------------------------------------------------------
 
-async function send(path: string, init?: RequestInit): Promise<Response> {
-  let response: Response;
+// A backend that can sleep (anything but localhost): a slow or failed first call means "waking up", not an error
+const CAN_SLEEP = !/^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/.test(API_BASE);
+// Show the waking message once a call to a possibly sleeping server takes this long
+const SLOW_MS = 3000;
+// Give a booting server this long before reporting it unreachable
+const WAKE_TIMEOUT_MS = 120_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The platform's answer while the backend boots: a network failure, or a 502/503 from its proxy.
+ * The backend's own 502/503 errors are JSON ({"error": ...}, {"detail": ...}) and pass through as errors.
+ */
+function isBooting(response: Response | null): boolean {
+  if (response === null) return true;
+  if (response.status !== 502 && response.status !== 503) return false;
+  return !(response.headers.get("content-type") ?? "").includes("application/json");
+}
+
+/** fetch, waiting out a sleeping backend's cold start instead of failing (see serverStatus.ts). */
+async function fetchWaking(path: string, init?: RequestInit): Promise<Response | null> {
+  const wake = CAN_SLEEP && mayBeAsleep();
+  const slow = wake ? setTimeout(markWaking, SLOW_MS) : undefined;
+  const deadline = Date.now() + WAKE_TIMEOUT_MS;
   try {
-    response = await fetch(`${API_BASE}${path}`, init);
-  } catch {
+    for (let attempt = 0; ; attempt++) {
+      let response: Response | null;
+      try {
+        response = await fetch(`${API_BASE}${path}`, init);
+      } catch {
+        response = null;
+      }
+      if (!isBooting(response)) {
+        markAwake();
+        return response;
+      }
+      if (!wake || Date.now() + 2000 > deadline) {
+        if (wake) markGaveUp();
+        return response;
+      }
+      markWaking();
+      await sleep(Math.min(2000 * 2 ** attempt, 8000));
+    }
+  } finally {
+    clearTimeout(slow);
+  }
+}
+
+/** Starts a sleeping backend booting as soon as the app loads, so it is likely awake by the first message. */
+export function warmUpServer(): void {
+  if (!USE_MOCK && CAN_SLEEP) void fetchWaking("/health").catch(() => undefined);
+}
+
+async function send(path: string, init?: RequestInit): Promise<Response> {
+  const response = await fetchWaking(path, init);
+  if (response === null) {
     throw new ApiError(`Backend unreachable at ${API_BASE}`, null, "unreachable");
   }
   if (!response.ok) {
