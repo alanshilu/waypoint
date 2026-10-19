@@ -133,6 +133,103 @@ button:disabled {
   border-width: 0 0 2px;
 }
 
+.chat-head {
+  position: relative;
+}
+
+.chat-head-side {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* Bring your own key: the toggle in the chat head, the form below it */
+.own-key-toggle {
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-muted);
+}
+
+.own-key-toggle:hover {
+  color: var(--espresso);
+  border-color: var(--espresso);
+}
+
+.own-key-toggle.active {
+  color: var(--espresso);
+  border-color: var(--positive);
+  border-width: 0 0 2px;
+}
+
+.own-key-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 14px;
+  background: var(--parchment-light);
+  border-bottom: 1px solid var(--hairline);
+  box-shadow: 0 6px 12px rgba(58, 36, 24, 0.08);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.own-key-panel p {
+  margin: 0;
+}
+
+.own-key-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.own-key-panel input {
+  padding: 7px 9px;
+  border: 1px solid var(--hairline);
+  background: var(--parchment);
+  font-family: var(--font-data);
+}
+
+.own-key-panel button[type="submit"] {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid var(--espresso);
+  background: var(--espresso);
+  color: var(--parchment-light);
+}
+
+.own-key-panel button[type="submit"]:disabled {
+  opacity: 0.5;
+}
+
+.own-key-panel .chip {
+  align-self: flex-start;
+}
+
+.own-key-panel a {
+  color: var(--rust);
+}
+
+.own-key-mask {
+  font-family: var(--font-data);
+}
+
+.own-key-problem {
+  color: var(--rust);
+}
+
+.own-key-note {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
 .chat-list {
   flex: 1;
   min-height: 0;

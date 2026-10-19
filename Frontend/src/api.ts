@@ -1,5 +1,6 @@
 import tripFixtureJson from "./fixtures/trip.sf-la.json";
 import poisFixtureJson from "./fixtures/pois.json";
+import { getOwnKey } from "./ownKey";
 import type {
   AgentApiResponse,
   AgentStreamEvent,
@@ -230,9 +231,17 @@ export interface AgentMessageBody {
   selected_route_id: number | null;
 }
 
+/** An agent message, with the user's own Anthropic key when they set one (ownKey.ts). */
+function agentPost(body: AgentMessageBody): RequestInit {
+  const init = postJson(body);
+  const key = getOwnKey();
+  if (key) init.headers = { ...init.headers, "X-Anthropic-Key": key };
+  return init;
+}
+
 /** POST /agent/message: one turn, answered when it finishes. */
 export function sendAgentMessage(body: AgentMessageBody): Promise<AgentApiResponse> {
-  return request<AgentApiResponse>("/agent/message", postJson(body));
+  return request<AgentApiResponse>("/agent/message", agentPost(body));
 }
 
 /**
@@ -246,7 +255,7 @@ export async function streamAgentMessage(
   body: AgentMessageBody,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<AgentApiResponse> {
-  const response = await send("/agent/message/stream", postJson(body));
+  const response = await send("/agent/message/stream", agentPost(body));
   if (!response.body) return sendAgentMessage(body);
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();

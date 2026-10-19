@@ -132,6 +132,15 @@ function failureText(error: unknown): string {
         return "The agent is still answering your previous message.";
       case "agent_timeout":
         return "The agent took too long to answer. Try again, or ask for less at once.";
+      case "daily_limit_reached":
+        return "The demo's daily limit is reached. Try again tomorrow, or use your own Anthropic key (\"Use your key\", top of this panel).";
+      case "too_many_sessions":
+      case "demo_busy":
+      case "invalid_api_key":
+      case "api_key_forbidden":
+      case "api_key_rate_limited":
+      case "api_key_no_credit":
+        return error.message;
       case "model_rate_limited":
       case "model_api_unreachable":
       case "model_api_error":

@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from functools import partial
 from typing import Any
 
 import anthropic
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.sse import KEEPALIVE_COMMENT, format_sse_event
 from pydantic import BaseModel, Field
@@ -64,10 +65,39 @@ class AgentError(Exception):
         return JSONResponse(status_code=self.status, content=self.body(), headers=self.headers)
 
 
-def classify(exc: BaseException) -> AgentError:
-    """Maps a failure while running the agent to a clean error."""
+OWN_KEY_HEADER = "X-Anthropic-Key"
+OWN_KEY_PATTERN = re.compile(r"sk-ant-[A-Za-z0-9_-]{20,250}")
+
+
+def own_key(header: str | None) -> str | None:
+    """
+    The user's own Anthropic key from the X-Anthropic-Key header, or None to use the server's key.
+
+    Bring your own key: the key is used for this one turn and then dropped. It is never stored in the
+    session, written to the database, logged or returned, and no error message repeats it.
+    """
+    if not header or not header.strip():
+        return None
+    key = header.strip()
+    if not OWN_KEY_PATTERN.fullmatch(key):
+        raise AgentError(400, "invalid_api_key", "That doesn't look like an Anthropic API key (it starts with sk-ant-)")
+    return key
+
+
+def classify(exc: BaseException, own: bool = False) -> AgentError:
+    """Maps a failure while running the agent to a clean error. own: the turn ran on the user's key."""
     if isinstance(exc, AgentError):
         return exc
+    if own:
+        # the user's key is the likely cause; say so, without repeating the key
+        if isinstance(exc, anthropic.AuthenticationError):
+            return AgentError(401, "invalid_api_key", "Anthropic rejected your API key; check it and try again")
+        if isinstance(exc, (anthropic.PermissionDeniedError, anthropic.NotFoundError)):
+            return AgentError(403, "api_key_forbidden", f"Your Anthropic key can't use the model {settings.agent_model}")
+        if isinstance(exc, anthropic.RateLimitError):
+            return AgentError(429, "api_key_rate_limited", "Your Anthropic key is being rate limited; try again shortly")
+        if isinstance(exc, anthropic.BadRequestError) and "credit balance" in str(exc).lower():
+            return AgentError(402, "api_key_no_credit", "Your Anthropic account is out of credit")
     if isinstance(exc, TimeoutError):
         return AgentError(504, "agent_timeout", f"The agent did not finish within {settings.agent_timeout_s:g} s")
     if isinstance(exc, anthropic.RateLimitError):
@@ -79,8 +109,11 @@ def classify(exc: BaseException) -> AgentError:
     return AgentError(500, "agent_error", f"The agent failed: {type(exc).__name__}")
 
 
-def admit(body: AgentMessageIn, store: SessionStore) -> Session:
-    """Checks the session, the rate limit and that no other turn is running. Raises AgentError."""
+def admit(body: AgentMessageIn, store: SessionStore, own: bool = False) -> Session:
+    """
+    Checks the session, the rate limit, that no other turn is running and the daily cap. Raises AgentError.
+    own: the turn runs on the user's own key, so it doesn't count toward the daily cap.
+    """
     session = store.get(body.session_id)
     if session is None:
         raise AgentError(404, "unknown_session",
@@ -93,6 +126,8 @@ def admit(body: AgentMessageIn, store: SessionStore) -> Session:
     lock = store.lock(session.id)
     if not lock.acquire(blocking=False):
         raise AgentError(409, "session_busy", "This session is still answering the previous message")
+    if own:
+        return session
     # counted last, so a rejected message never uses up the day's turns
     allowed, retry_after = store.take_turn()
     if not allowed:
@@ -180,19 +215,24 @@ def create_session(request: Request, store: SessionStore = Depends(get_store)):
 
 
 @router.post("/message")
-async def agent_message(body: AgentMessageIn, store: SessionStore = Depends(get_store)):
+async def agent_message(
+    body: AgentMessageIn,
+    store: SessionStore = Depends(get_store),
+    x_anthropic_key: str | None = Header(default=None, alias=OWN_KEY_HEADER),
+):
     try:
-        session = admit(body, store)
+        key = own_key(x_anthropic_key)
+        session = admit(body, store, own=key is not None)
     except AgentError as e:
         return e.response()
     lock = store.lock(session.id)
     try:
         loop = asyncio.get_running_loop()
-        work = partial(orchestrator.run_agent_turn, list(session.messages), user_text(body))
+        work = partial(orchestrator.run_agent_turn, list(session.messages), user_text(body), api_key=key)
         turn = await asyncio.wait_for(loop.run_in_executor(None, work), timeout=settings.agent_timeout_s)
         return finish(store, session, turn)
     except Exception as e:  # noqa: BLE001 - every failure becomes a clean JSON error
-        return classify(e).response()
+        return classify(e, own=key is not None).response()
     finally:
         lock.release()
 
@@ -202,7 +242,11 @@ def _sse(event: str, data: Any) -> bytes:
 
 
 @router.post("/message/stream")
-async def agent_message_stream(body: AgentMessageIn, store: SessionStore = Depends(get_store)):
+async def agent_message_stream(
+    body: AgentMessageIn,
+    store: SessionStore = Depends(get_store),
+    x_anthropic_key: str | None = Header(default=None, alias=OWN_KEY_HEADER),
+):
     """
     Server-sent events. Session, rate-limit and busy errors come back as plain
     JSON before the stream starts; failures during the turn arrive as an
@@ -210,9 +254,11 @@ async def agent_message_stream(body: AgentMessageIn, store: SessionStore = Depen
     connection open.
     """
     try:
-        session = admit(body, store)
+        key = own_key(x_anthropic_key)
+        session = admit(body, store, own=key is not None)
     except AgentError as e:
         return e.response()
+    own = key is not None
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
@@ -222,7 +268,7 @@ async def agent_message_stream(body: AgentMessageIn, store: SessionStore = Depen
 
     def work() -> None:
         try:
-            turn = orchestrator.run_agent_turn(list(session.messages), user_text(body), on_event)
+            turn = orchestrator.run_agent_turn(list(session.messages), user_text(body), on_event, api_key=key)
             loop.call_soon_threadsafe(queue.put_nowait, ("done", turn))
         except Exception as e:  # noqa: BLE001 - reported as an error event
             loop.call_soon_threadsafe(queue.put_nowait, ("error", e))
@@ -249,7 +295,7 @@ async def agent_message_stream(body: AgentMessageIn, store: SessionStore = Depen
                     yield _sse("final", finish(store, session, payload))
                     return
                 else:
-                    yield _sse("error", classify(payload).body())
+                    yield _sse("error", classify(payload, own=own).body())
                     return
         finally:
             lock.release()

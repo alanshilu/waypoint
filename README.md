@@ -32,6 +32,7 @@ Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leav
 - **Visible reasoning.** Each tool call streams to the chat as it runs (server-sent events), and a trace drawer shows latency, cache hits and errors per call.
 - **Mock mode.** The frontend runs entirely from fixtures, with no backend or API keys, for demos and UI work.
 - **Ready for a public demo.** One `docker compose up` starts everything. Cost limits cap agent use per visitor and per day, and a demo mode makes all trip and route writes agent-only.
+- **Bring your own key.** Heavy users can plug in their own Anthropic API key. Their turns are billed to them and skip the daily limit, and Waypoint never stores the key.
 
 ## Screenshots
 
@@ -144,7 +145,7 @@ A full run costs well under $1 at the time of writing and stops itself at `--max
 
 | Check | Command | Result |
 |---|---|---|
-| Backend unit and API tests | `pytest` | 124 passed in 8.7 s |
+| Backend unit and API tests | `pytest` | 133 passed in 12.5 s |
 | Python lint | `ruff check .` | All checks passed |
 | Frontend types | `npm run typecheck` | 0 errors |
 | Frontend production build | `npm run build` | Builds |
@@ -152,7 +153,7 @@ A full run costs well under $1 at the time of writing and stops itself at `--max
 The tests cover the following, with the model stubbed out:
 
 - the agent HTTP API: sessions, rate limits, timeouts, streaming and error shapes
-- the demo's cost limits and its endpoint locks
+- the demo's cost limits, its endpoint locks and bring-your-own-key handling
 - `/health`
 - every eval check, on synthetic sessions
 - the scenic score, stop planning and trip matching
@@ -250,6 +251,18 @@ The cost limits are on in every mode. They're set in `Backend/.env.example`, and
 | `AGENT_MAX_SESSIONS` | 200 live sessions | 503 `demo_busy` |
 | `AGENT_SESSION_TTL_S` | 1800 s idle | the session expires |
 
+### Bring your own Anthropic key
+
+Users who hit the daily limit, or plan a lot, can click **Use your key** in the chat panel and paste their own key. Their turns then run on that key: they're billed to the user's Anthropic account and don't count toward `AGENT_DAILY_TURN_CAP`. The other limits still apply.
+
+How the key is handled, by design, with no accounts and no key storage:
+
+- **In the browser:** it's kept in `sessionStorage`, so it's gone when the tab closes. It's sent only in the `X-Anthropic-Key` header of agent messages, never with other requests.
+- **On the server:** [`own_key()`](Backend/app/api/v1/endpoints/agent.py) checks its shape before anything runs. The orchestrator builds an Anthropic client for that one turn and closes it when the turn ends. The key is never written to the session, the database or the logs, and never echoed back. Errors caused by the key say so ("Anthropic rejected your API key") without repeating it.
+- **Tested:** [`tests/test_own_key.py`](Backend/tests/test_own_key.py) runs the real Anthropic SDK against a fake API that rejects the key. It checks that the key reached the API, then that it appears nowhere in the response, the stream, the stored session or the debug-level logs.
+
+Serve the app over HTTPS so the key is encrypted in transit.
+
 ## API
 
 | Method | Path | Purpose |
@@ -268,7 +281,7 @@ The cost limits are on in every mode. They're set in `Backend/.env.example`, and
 | GET | `/pois/`, `/pois/search` | Points of interest |
 | GET | `/weather/current`, `/weather/forecast` | Current weather and forecasts |
 
-Agent endpoints return errors as `{"error": {"code", "message"}}`, with `Retry-After` on 429 and 503. With `PUBLIC_DEMO=true`, `GET /trips/trips` returns 404. `POST /trips/`, `/routes/generate/{trip_id}` and `/routes/select/{route_id}` return 403 without the `X-Waypoint-Internal` header.
+Agent endpoints return errors as `{"error": {"code", "message"}}`, with `Retry-After` on 429 and 503. The message endpoints accept an optional `X-Anthropic-Key` header to run the turn on the caller's own key. With `PUBLIC_DEMO=true`, `GET /trips/trips` returns 404. `POST /trips/`, `/routes/generate/{trip_id}` and `/routes/select/{route_id}` return 403 without the `X-Waypoint-Internal` header.
 
 ## Project structure
 
@@ -301,6 +314,7 @@ docs/screenshots/          the images in this README
 
 - **OpenRouteService speed.** Route generation depends on ORS, which can be slow: on 2026-10-18 a single SF to LA request took between 10 s and over 100 s. Both routes are requested in parallel and each may take up to `ORS_ROUTE_TIMEOUT_S` (90 s). Past that, the endpoint returns 504, or 502 for an ORS error, and the agent tells the user to retry. There is no automatic retry yet.
 - **Sessions and cost limits are in memory.** Sessions and the counters behind the cost limits are lost on restart, which also resets the day's turn count. With several worker processes, each one keeps its own. Run one backend process for now.
+- **Bring your own key covers the model only.** A user's Anthropic key pays for their agent turns, but routes, geocoding and points of interest still use the server's OpenRouteService key and quota.
 - **`PUBLIC_DEMO` covers trips and routes only.** `/location/search`, `/pois/search`, `/weather/*` and `POST /trips/{id}/plan` stay public. They write nothing, but each call spends OpenRouteService or Open-Meteo quota.
 - **The per-IP limit trusts the proxy.** The visitor's address comes from the `X-Forwarded-For` header set by the nginx container. Don't publish the backend's port directly, or a client could set that header itself.
 - **Stop planning assumes a uniform pace** along the route and uses the origin's time zone for the whole trip.

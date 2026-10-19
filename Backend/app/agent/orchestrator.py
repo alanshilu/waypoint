@@ -13,6 +13,11 @@ from app.core.config import settings
 
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+
+def make_client(api_key: str) -> anthropic.Anthropic:
+    """A client for one turn on a user's own key (bring your own key). The key lives only in this object."""
+    return anthropic.Anthropic(api_key=api_key)
+
 MAX_TOKENS = 16000
 # Size limit for a step's result in the trace. The full result stays on the
 # step in memory (full_result) so eval checks can read all of it.
@@ -172,6 +177,7 @@ def run_agent_turn(
     conversation_history: list,
     user_message: str,
     on_event: Callable[[dict], None] | None = None,
+    api_key: str | None = None,
 ) -> AgentTurn:
     """
     conversation_history: list of prior {"role": ..., "content": ...} messages
@@ -179,10 +185,23 @@ def run_agent_turn(
     on_event: optional callback for live progress, called from this thread with
         {"type": "tool_start", "tool", "args"} before each tool call and
         {"type": "tool_end", "tool", "ms", "error", "cached", "tokens"} after it.
+    api_key: a user's own Anthropic key for this turn only; None uses the server's key.
 
     Returns an AgentTurn. Pass turn.messages back in as conversation_history on
     the next call so the agent keeps context across turns.
     """
+    if api_key is None:
+        return _run_turn(client, conversation_history, user_message, on_event)
+    with make_client(api_key) as own_client:  # closed, and dropped with the key, when the turn ends
+        return _run_turn(own_client, conversation_history, user_message, on_event)
+
+
+def _run_turn(
+    api: anthropic.Anthropic,
+    conversation_history: list,
+    user_message: str,
+    on_event: Callable[[dict], None] | None,
+) -> AgentTurn:
     messages = conversation_history + [{"role": "user", "content": user_message}]
     steps: list[Step] = []
     usage = Usage(model=settings.agent_model)
@@ -191,7 +210,7 @@ def run_agent_turn(
     emit = on_event or (lambda event: None)
 
     for model_call in range(MAX_MODEL_CALLS_PER_TURN):
-        response = client.beta.messages.create(
+        response = api.beta.messages.create(
             model=settings.agent_model,
             max_tokens=MAX_TOKENS,
             system=SYSTEM_PROMPT,

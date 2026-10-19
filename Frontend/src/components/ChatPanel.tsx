@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { USE_MOCK } from "../api";
 import { useTrip } from "../state/TripProvider";
 import type { StepView } from "../types";
+import OwnKeyPanel from "./OwnKeyPanel";
 
 const STARTER_CHIPS = ["San Francisco to Los Angeles"];
 
@@ -76,7 +77,10 @@ export default function ChatPanel() {
     <aside className="chat" aria-label="Trip agent chat">
       <header className="chat-head">
         <span className="brand">Waypoint</span>
-        <span className={USE_MOCK ? "mode-badge mock" : "mode-badge"}>{USE_MOCK ? "Mock data" : "Live API"}</span>
+        <span className="chat-head-side">
+          {!USE_MOCK && <OwnKeyPanel />}
+          <span className={USE_MOCK ? "mode-badge mock" : "mode-badge"}>{USE_MOCK ? "Mock data" : "Live API"}</span>
+        </span>
       </header>
 
       <div className="chat-list" ref={listRef} aria-live="polite">
