@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Backend
+    # The app reads these at import; the tests stub the database, the model and every external API
+    env:
+      DB_HOST: localhost
+      DB_USER: ci
+      DB_PASS: ci
+      DB_NAME: ci
+      ORS_API_KEY: ci
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            Backend/requirements.lock
+            Backend/requirements-dev.txt
+      - run: pip install -r requirements.lock -r requirements-dev.txt
+      - name: ruff
+        run: ruff check .
+      - name: pytest
+        run: pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+      - name: typecheck
+        run: npm run typecheck
+      - name: build
+        run: npm run build

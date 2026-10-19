@@ -1,5 +1,7 @@
 # Waypoint
 
+[![CI](https://github.com/alanshilu/waypoint/actions/workflows/ci.yml/badge.svg)](https://github.com/alanshilu/waypoint/actions/workflows/ci.yml)
+
 AI road-trip planner: a Claude tool-calling agent plans routes, overnight stops and weather on a FastAPI + PostGIS backend. React frontend. Agent evals: 1/10 → 10/10 cases.
 
 Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leave tomorrow at 8am") and the agent geocodes both ends, generates a fastest and a backroads route, splits the drive into days, checks the weather at each stop **on the day you'll be there**, and finds places to stop. Every number it tells you comes from a tool result, and the app shows each tool call as it runs.
