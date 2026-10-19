@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import type { ReactNode } from "react";
 import * as api from "../api";
 import { runAgentTurn } from "../agent";
-import type { AgentTurnResult, ChatMessage, PoiResult, StepView, Trip, TurnSource } from "../types";
+import type { AgentTurnResult, ChatMessage, PlaceGroup, PoiResult, StepView, Trip, TurnSource } from "../types";
 
 export interface LastTurn {
   steps: StepView[];
@@ -20,6 +20,8 @@ interface State {
   hoverMile: number | null;
   /** Latest POI search or planned stops, drawn on the map. Cleared when a new trip loads. */
   pois: PoiResult | null;
+  /** Campsites and places to eat from the agent, picks marked. Cleared when a new trip loads. */
+  places: PlaceGroup[] | null;
   messages: ChatMessage[];
   lastTurn: LastTurn | null;
   busy: boolean;
@@ -43,6 +45,7 @@ const initialState: State = {
   selectedRouteId: null,
   hoverMile: null,
   pois: null,
+  places: null,
   messages: [],
   lastTurn: null,
   busy: false,
@@ -71,6 +74,7 @@ function reducer(state: State, action: Action): State {
         trip: action.trip,
         selectedRouteId: action.trip.selected_route_id,
         pois: null,
+        places: null,
       };
     case "TRIP_RESTORE_FAILED":
       return { ...state, tripLoading: false, error: action.message };
@@ -90,9 +94,12 @@ function reducer(state: State, action: Action): State {
     case "TURN_FINISHED": {
       const { result } = action;
       // The agent and the UI write to the same state: apply what the turn changed.
-      let { trip, selectedRouteId, pois } = state;
+      let { trip, selectedRouteId, pois, places } = state;
       if (result.state_changed.includes("trip") && result.trip) {
-        if (result.trip.id !== trip?.id) pois = null;
+        if (result.trip.id !== trip?.id) {
+          pois = null;
+          places = null;
+        }
         trip = result.trip;
         selectedRouteId = result.selectedRouteId ?? result.trip.selected_route_id;
       }
@@ -107,6 +114,7 @@ function reducer(state: State, action: Action): State {
         trip,
         selectedRouteId,
         pois: result.state_changed.includes("pois") && result.pois ? result.pois : pois,
+        places: result.state_changed.includes("places") && result.places ? result.places : places,
         hoverMile: null,
         busy: false,
         messages: state.messages.map((m) =>

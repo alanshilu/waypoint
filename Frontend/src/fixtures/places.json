@@ -1,0 +1,15 @@
+{
+  "_comment": "MOCK DATA. Invented campsites and places to eat, placed at fixed offsets (degrees) around whatever point mock mode searches. Nothing here came from OpenStreetMap.",
+  "camping": [
+    { "name": "Pine Hollow Campground", "category": "camp_site", "dlat": 0.04, "dlon": 0.05, "facts": ["tents allowed", "RVs allowed", "toilets", "showers", "drinking water", "fee", "reservations: recommended"] },
+    { "name": "Creekside RV Park", "category": "caravan_site", "dlat": -0.02, "dlon": 0.03, "facts": ["RV park", "toilets", "showers", "power hookups", "fee"] },
+    { "name": "Oak Flat Camp", "category": "camp_site", "dlat": 0.09, "dlon": -0.06, "facts": ["tents allowed", "toilets", "free", "reservations: no"] },
+    { "name": "Ridge Top Campground", "category": "camp_site", "dlat": -0.11, "dlon": -0.08, "facts": ["tents allowed", "drinking water", "fee"] }
+  ],
+  "food": [
+    { "name": "Main Street Diner", "category": "restaurant", "dlat": 0.004, "dlon": 0.006, "facts": ["restaurant", "american", "hours: Mo-Su 07:00-21:00", "vegetarian options"] },
+    { "name": "Two Rivers Taqueria", "category": "fast_food", "dlat": -0.006, "dlon": 0.002, "facts": ["fast food", "mexican", "hours: Mo-Su 10:00-22:00", "takeaway"] },
+    { "name": "Roadside Coffee Co.", "category": "cafe", "dlat": 0.008, "dlon": -0.009, "facts": ["cafe", "coffee shop", "hours: Mo-Su 06:00-15:00"] },
+    { "name": "Harvest Table", "category": "restaurant", "dlat": -0.015, "dlon": -0.012, "facts": ["restaurant", "regional", "hours: Tu-Su 11:00-21:00", "outdoor seating"] }
+  ]
+}

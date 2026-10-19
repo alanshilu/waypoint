@@ -30,6 +30,7 @@ Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leav
 - **Points of interest.** Food, fuel, lodging and sights near the destination or along the selected route.
 - **Grounded answers.** The agent may only state numbers, dates and places that appear in its tool results, and it reports a failed tool rather than filling the gap.
 - **Visible reasoning.** Each tool call streams to the chat as it runs (server-sent events), and a trace drawer shows latency, cache hits and errors per call.
+- **Where to camp and eat.** For each night, the agent recommends a campsite and a place to eat; for each day, a lunch stop where the drive reaches noon. Picks come with a reason from OpenStreetMap facts (showers, tents allowed, fee, cuisine, hours), and every option found appears on the map and in a list.
 - **Pick on the map.** States are labelled. Before a trip exists, you can choose a start and an end city from each state's five most populous cities (Census 2023 estimates) instead of typing.
 - **Mock mode.** The frontend runs entirely from fixtures, with no backend or API keys, for demos and UI work.
 - **Ready for a public demo.** One `docker compose up` starts everything. Cost limits cap agent use per visitor and per day, and a demo mode makes all trip and route writes agent-only.
@@ -57,6 +58,13 @@ One live conversation, captured on 2026-10-18: the real agent (Claude Sonnet 5.5
 **6. Pick a trip on the map.** Before a trip exists, hovering a state previews its five largest cities, and clicking or tapping it pins the list. Choosing a start and then a destination sends "Plan a trip from San Francisco, CA to Austin, TX" to the agent. It works from the keyboard too: Tab to a state, then Enter.
 ![Choosing a destination city in Texas after picking San Francisco](docs/screenshots/06-city-picker.png)
 
+**7. Where to camp and eat.** "San Francisco to Los Angeles on the backroads, leave tomorrow at 8am, max 5 hours of driving a day. Where can we camp and eat?" The agent plans three days and picks:
+- a campsite for each night, e.g. Primitive Camp, 1.0 mi from the night 1 stop, tents allowed and free
+- dinner and lunch stops, widening the food search to about 12 miles where the backroads run far from any town
+
+Where nothing turned up, it says to bring dinner instead of inventing a restaurant. Tents are campsites, circles are food, and the agent's picks are filled and named.
+![Campsites and places to eat along a three-day backroads trip](docs/screenshots/07-camp-and-eat.png)
+
 ## How it works
 
 ```mermaid
@@ -72,6 +80,7 @@ flowchart LR
     SVC --> DB[("Postgres + PostGIS")]
     SVC --> ORS["OpenRouteService<br/>routes, geocoding, POIs"]
     SVC --> OM["Open-Meteo<br/>forecasts"]
+    SVC --> OSM["OpenStreetMap Overpass<br/>campsites, places to eat"]
 ```
 
 The agent's tools call the backend's own REST API over HTTP, so the agent and the frontend share one code path for trips, routes, POIs and weather.
@@ -94,6 +103,7 @@ The agent's tools call the backend's own REST API over HTTP, so the agent and th
 | `plan_stops` | Splits a route into driving days and returns overnight stops with arrival-date forecasts |
 | `get_weather_forecast` | Forecast for a point on a target date |
 | `search_pois` | Points of interest near a point |
+| `find_places` | Campsites and places to eat near every overnight and lunch stop in one call, ranked, with facts from OpenStreetMap |
 | `select_route` | Locks in the route the user chose |
 
 The system prompt is in [`Backend/app/agent/prompt.py`](Backend/app/agent/prompt.py). Its grounding rules: every number, date and place name must appear in a tool result (rounding, unit conversion, and differences or ratios of two tool numbers are allowed); coordinates passed to tools must come from other tool results; scores are never put on a scale ("/100", "out of 10").
@@ -149,7 +159,7 @@ A full run costs well under $1 at the time of writing and stops itself at `--max
 
 | Check | Command | Result |
 |---|---|---|
-| Backend unit and API tests | `pytest` | 133 passed in 12.5 s |
+| Backend unit and API tests | `pytest` | 151 passed in 13.5 s |
 | Python lint | `ruff check .` | All checks passed |
 | Frontend types | `npm run typecheck` | 0 errors |
 | Frontend production build | `npm run build` | Builds |
@@ -284,6 +294,7 @@ Serve the app over HTTPS so the key is encrypted in transit.
 | POST | `/routes/generate/{trip_id}` | Fastest and backroads routes |
 | POST | `/routes/select/{route_id}` | Select a route |
 | GET | `/pois/`, `/pois/search` | Points of interest |
+| POST | `/places/search` | Campsites and places to eat near up to 10 points |
 | GET | `/weather/current`, `/weather/forecast` | Current weather and forecasts |
 
 Agent endpoints return errors as `{"error": {"code", "message"}}`, with `Retry-After` on 429 and 503. The message endpoints accept an optional `X-Anthropic-Key` header to run the turn on the caller's own key. With `PUBLIC_DEMO=true`, `GET /trips/trips` returns 404. `POST /trips/`, `/routes/generate/{trip_id}` and `/routes/select/{route_id}` return 403 without the `X-Waypoint-Internal` header.
@@ -324,6 +335,11 @@ docs/screenshots/          the images in this README
 - **The per-IP limit trusts the proxy.** The visitor's address comes from the `X-Forwarded-For` header set by the nginx container. Don't publish the backend's port directly, or a client could set that header itself.
 - **Stop planning assumes a uniform pace** along the route and uses the origin's time zone for the whole trip.
 - **The evals are one sample** and have documented blind spots (place names are found by heuristic; any tool number can ground an equal number in the reply).
+- **Campsite and food searches can be slow.** They use the free public Overpass service, which took 38–60 s per search on 2026-10-19.
+  - Results are cached for a day, but only in memory, so a restart or a Render sleep clears them.
+  - If Overpass fails, food falls back to OpenRouteService within about 1.6 miles, and campsites come back empty with a note.
+- **Place facts are only as complete as OpenStreetMap.** Many campsites list no amenities, and opening hours are shown as tagged, not checked against your arrival time.
+- **Lunch time isn't added to the schedule.** Lunch stops are where each day's driving reaches noon; the break doesn't push back arrival times.
 - **US only.** The map and prompt target US road trips.
 
 ## Roadmap
@@ -334,6 +350,8 @@ Planned work, roughly in order:
 - [x] The whole stack (PostGIS, backend, frontend) in `docker-compose.yml`
 - [x] CI on every push: `ruff`, `pytest`, frontend typecheck and build
 - [x] Public-demo hardening: pinned dependencies, `/health` and `/ready`, cost limits, agent-only writes
+- [x] Campsites and places to eat at each night's stop, plus lunch on the road
+- [ ] Keep campsite and food results in Postgres, so searches stay fast across restarts
 - [ ] Retry ORS with backoff, and show the failed tool call as failed in the chat checklist (today a handled ORS failure is listed as done, with the reason in the reply)
 - [ ] Redis-backed sessions and cost counters behind the existing `SessionStore` interface, for multiple workers and restarts
 - [ ] Per-IP limits on the read endpoints that spend ORS and Open-Meteo quota

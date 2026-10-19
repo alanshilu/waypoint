@@ -1052,6 +1052,177 @@ button:disabled {
   stroke-linejoin: round;
 }
 
+/* Campsites (tents, olive) and places to eat (circles, rust); the agent's picks larger and named */
+.place-marker {
+  cursor: default;
+}
+
+.place-marker path,
+.place-marker circle {
+  fill: var(--parchment-light);
+  stroke-width: 1.5;
+}
+
+.place-marker.camping path {
+  stroke: var(--olive);
+}
+
+.place-marker.food circle {
+  stroke: var(--rust);
+}
+
+.place-marker.picked.camping path,
+.place-marker.active.camping path {
+  fill: var(--olive);
+  stroke: var(--parchment-light);
+}
+
+.place-marker.picked.food circle,
+.place-marker.active.food circle {
+  fill: var(--rust);
+  stroke: var(--parchment-light);
+}
+
+.place-marker text {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--espresso);
+  paint-order: stroke;
+  stroke: var(--parchment-light);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.places-panel {
+  position: absolute;
+  left: var(--gap);
+  bottom: var(--gap);
+  width: 300px;
+  max-height: 58%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  background: var(--parchment-light);
+}
+
+.places-panel h2 {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 15px;
+}
+
+.places-scroll {
+  overflow-y: auto;
+  padding: 2px 0 6px;
+}
+
+.places-section h3 {
+  margin: 8px 10px 2px;
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.places-group {
+  padding: 0 10px;
+}
+
+.places-group h4 {
+  margin: 4px 0 1px;
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.places-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.places-group li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 4px;
+  font-size: 13px;
+}
+
+.places-group li.active {
+  background: var(--parchment-deep);
+}
+
+.places-group li.picked .place-name {
+  font-weight: 600;
+}
+
+.place-glyph {
+  width: 10px;
+  height: 10px;
+  align-self: center;
+  border: 1.5px solid;
+}
+
+.place-glyph.camping {
+  border: 0;
+  background: var(--olive);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.place-glyph.food {
+  border-color: var(--rust);
+  border-radius: 50%;
+}
+
+.picked .place-glyph.food {
+  background: var(--rust);
+}
+
+.place-reason,
+.place-facts {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.place-distance {
+  font-family: var(--font-data);
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.places-empty,
+.places-note {
+  margin: 2px 4px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.places-more {
+  margin: 1px 0 0 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: var(--rust);
+  text-decoration: underline;
+}
+
+.places-attribution {
+  margin: 0;
+  padding: 4px 10px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
 .poi-list {
   position: absolute;
   left: var(--gap);

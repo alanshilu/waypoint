@@ -41,6 +41,7 @@ const ACTIVITY: Record<string, string> = {
   plan_stops: "Planning overnight stops",
   get_weather_forecast: "Checking the weather",
   search_pois: "Finding places to stop",
+  find_places: "Finding campsites and places to eat",
   select_route: "Selecting the route",
 };
 

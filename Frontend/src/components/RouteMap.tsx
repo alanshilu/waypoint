@@ -10,11 +10,12 @@ import { buildMileIndex, pointAtMile, simplifyLine } from "../geo";
 import { routeLabel } from "../format";
 import { useTrip } from "../state/TripProvider";
 import { useSize } from "../useSize";
-import type { Place } from "../types";
+import type { Place, PlaceOption } from "../types";
 import { citiesIn } from "../data/cities";
 import type { City } from "../data/cities";
 import { CALLOUT_POINTS, LABEL_POINTS, STATE_CODE_BY_FIPS } from "../data/states";
 import CityPopover from "./CityPopover";
+import PlacesPanel from "./PlacesPanel";
 
 const MAX_ROUTE_POINTS = 500;
 // Footprint of the RouteComparison overlay, including its margins.
@@ -45,6 +46,8 @@ type FitMode = "usa" | "route" | "stops";
 
 // Width reserved on the left for the stops list while it is showing.
 const STOPS_LIST_WIDTH = 290;
+// Width reserved on the left for the campsites-and-food list (300 px wide, plus its margin)
+const PLACES_LIST_WIDTH = 330;
 // The backend searches a 2 km box, so keep at least this much around the stops (degrees).
 const STOPS_PADDING = 0.01;
 
@@ -53,8 +56,25 @@ const shortName = (place: Place) => place.name.split(",")[0];
 const cityLabel = (city: City) => `${city.name}, ${city.state}`;
 
 export default function RouteMap() {
-  const { trip, tripLoading, selectedRouteId, hoverMile, pois, selectRoute, error, busy, sendMessage } = useTrip();
+  const { trip, tripLoading, selectedRouteId, hoverMile, pois, places, selectRoute, error, busy, sendMessage } =
+    useTrip();
   const [hoveredPoi, setHoveredPoi] = useState<number | null>(null);
+  const [hoveredPlace, setHoveredPlace] = useState<string | null>(null);
+
+  // Campsites and places to eat, once each (a place can be found from two stops); a pick wins
+  const placeMarkers = useMemo(() => {
+    const byId = new Map<string, PlaceOption>();
+    for (const group of places ?? []) {
+      for (const place of group.places) {
+        const seen = byId.get(place.id);
+        if (!seen || (place.recommended && !seen.recommended)) byId.set(place.id, place);
+      }
+    }
+    // picks last, so they draw on top
+    return [...byId.values()].sort((a, b) => Number(!!a.recommended) - Number(!!b.recommended));
+  }, [places]);
+  const picks = useMemo(() => placeMarkers.filter((p) => p.recommended), [placeMarkers]);
+  const hasPlaces = placeMarkers.length > 0 || (places?.length ?? 0) > 0;
   const [ref, { width, height }] = useSize<HTMLDivElement>();
   const [mode, setMode] = useState<FitMode>("usa");
 
@@ -146,18 +166,20 @@ export default function RouteMap() {
   const projection = useMemo(() => {
     if (width === 0 || height === 0) return null;
     const side = zoomed ? 70 : 24;
-    const left = stops ? STOPS_LIST_WIDTH : side;
+    const left = hasPlaces ? PLACES_LIST_WIDTH : stops ? STOPS_LIST_WIDTH : side;
     const bottom = zoomed ? 50 : 24;
     let target: GeoPermissibleObjects = lower48;
     if (view === "route") {
       target = { type: "GeometryCollection", geometries: routes.map((r) => r.line) };
     } else if (view === "stops" && stops) {
-      const lons = stops.items.map((p) => p.lon);
-      const lats = stops.items.map((p) => p.lat);
+      // the stops, and the campsites and places to eat picked near them
+      const points = [...stops.items, ...picks];
+      const lons = points.map((p) => p.lon);
+      const lats = points.map((p) => p.lat);
       target = {
         type: "MultiPoint",
         coordinates: [
-          ...stops.items.map((p) => [p.lon, p.lat]),
+          ...points.map((p) => [p.lon, p.lat]),
           [Math.min(...lons) - STOPS_PADDING, Math.min(...lats) - STOPS_PADDING],
           [Math.max(...lons) + STOPS_PADDING, Math.max(...lats) + STOPS_PADDING],
         ],
@@ -177,7 +199,7 @@ export default function RouteMap() {
     const below = fit(CARDS_HEIGHT, side);
     const beside = fit(HEADER_HEIGHT, CARDS_WIDTH);
     return below.scale() >= beside.scale() ? below : beside;
-  }, [width, height, view, hasRoutes, routes, stops]);
+  }, [width, height, view, hasRoutes, routes, stops, picks, hasPlaces]);
 
   const base = useMemo(() => {
     if (!projection) return null;
@@ -335,6 +357,45 @@ export default function RouteMap() {
               );
             })}
 
+          {placeMarkers.map((place) => {
+            const xy = projection([place.lon, place.lat]);
+            if (!xy) return null;
+            const [x, y] = xy;
+            const size = place.recommended ? 8 : 5;
+            const classes = ["place-marker", place.kind];
+            if (place.recommended) classes.push("picked");
+            if (hoveredPlace === place.id) classes.push("active");
+            return (
+              <g
+                key={place.id}
+                className={classes.join(" ")}
+                onMouseEnter={() => setHoveredPlace(place.id)}
+                onMouseLeave={() => setHoveredPlace(null)}
+              >
+                <title>
+                  {[place.name, ...(place.reason ? [place.reason] : place.facts.slice(0, 3))].join(" · ")}
+                </title>
+                {place.kind === "camping" ? (
+                  // a tent
+                  <path d={`M${x} ${y - size}L${x + size} ${y + size * 0.8}L${x - size} ${y + size * 0.8}Z`} />
+                ) : (
+                  <circle cx={x} cy={y} r={size * 0.8} />
+                )}
+                {/* a night's campsite and dinner picks sit close together: name tents on the right, food on the left */}
+                {(place.recommended || hoveredPlace === place.id) && (
+                  <text
+                    x={place.kind === "camping" ? x + size + 4 : x - size - 4}
+                    y={y}
+                    textAnchor={place.kind === "camping" ? "start" : "end"}
+                    dominantBaseline="middle"
+                  >
+                    {place.name}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
           {stops &&
             (view === "stops" ? (
               stops.items.map((poi, i) => {
@@ -432,7 +493,9 @@ export default function RouteMap() {
         </div>
       </div>
 
-      {stops && (
+      {places && places.length > 0 ? (
+        <PlacesPanel groups={places} hovered={hoveredPlace} onHover={setHoveredPlace} />
+      ) : stops && (
         <section className="poi-list" aria-label="Stops">
           <h2>
             Stops near {stops.label} <span className="data">({stops.items.length})</span>

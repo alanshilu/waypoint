@@ -1,5 +1,7 @@
 import tripFixtureJson from "./fixtures/trip.sf-la.json";
 import poisFixtureJson from "./fixtures/pois.json";
+import placesFixtureJson from "./fixtures/places.json";
+import { haversineMiles } from "./geo";
 import { getOwnKey } from "./ownKey";
 import { markAwake, markGaveUp, markWaking, mayBeAsleep } from "./serverStatus";
 import type {
@@ -8,6 +10,8 @@ import type {
   CacheStatus,
   ForecastDay,
   Place,
+  PlaceGroup,
+  PlaceKind,
   Poi,
   RawForecast,
   RawLocationSearch,
@@ -31,6 +35,8 @@ const tripFixture = tripFixtureJson as unknown as Trip;
 const poisFixture = poisFixtureJson as unknown as {
   sets: { center: { lat: number; lon: number }; pois: Poi[] }[];
 };
+type PlaceTemplate = { name: string; category: string; dlat: number; dlon: number; facts: string[] };
+const placesFixture = placesFixtureJson as unknown as Record<PlaceKind, PlaceTemplate[]>;
 
 /**
  * Cache status of the most recent call. The backend does not report cache
@@ -255,6 +261,55 @@ export async function getSavedPois(lat: number, lon: number, radiusKm = 2): Prom
   if (USE_MOCK) return searchPois(lat, lon);
   const data = await request<RawPoiSearch>(`/pois/?${query({ lat, lon, radius_km: radiusKm })}`);
   return data.pois ?? [];
+}
+
+export interface PlacePoint {
+  near: string;
+  /** Shown in the list, e.g. "Night 1 · Paso Robles"; the backend's response carries its own */
+  label: string;
+  lat: number;
+  lon: number;
+  kinds: PlaceKind[];
+}
+
+/** Mock mode: the fixture's invented places, at fixed offsets around each point. */
+function mockPlaceGroups(points: PlacePoint[]): PlaceGroup[] {
+  return points.flatMap((point) =>
+    point.kinds.map((kind) => ({
+      near: point.near,
+      label: point.label,
+      kind,
+      lat: point.lat,
+      lon: point.lon,
+      radius_mi: kind === "camping" ? 15.5 : 3.1,
+      source: "mock",
+      places: placesFixture[kind]
+        .map((t, i) => {
+          const lat = point.lat + t.dlat;
+          const lon = point.lon + t.dlon;
+          return {
+            id: `mock:${point.near}:${kind}:${i}`,
+            kind,
+            category: t.category,
+            name: t.name,
+            lat,
+            lon,
+            distance_mi: Math.round(haversineMiles([point.lon, point.lat], [lon, lat]) * 10) / 10,
+            facts: t.facts,
+          };
+        })
+        .sort((a, b) => a.distance_mi - b.distance_mi),
+    })),
+  );
+}
+
+/** POST /places/search: campsites and places to eat near each point, ranked best first. */
+export async function findPlaces(points: PlacePoint[]): Promise<PlaceGroup[]> {
+  if (USE_MOCK) return mock(mockPlaceGroups(points), 900);
+  const body = { points: points.map(({ near, lat, lon, kinds }) => ({ near, lat, lon, kinds })) };
+  const data = await request<{ groups: Omit<PlaceGroup, "label">[] }>("/places/search", postJson(body));
+  const labels = new Map(points.map((p) => [p.near, p.label]));
+  return data.groups.map((g) => ({ ...g, label: labels.get(g.near) ?? g.near }));
 }
 
 /** GET /weather/forecast (7-day list; target_date is not used by the UI). */

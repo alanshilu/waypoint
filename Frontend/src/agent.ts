@@ -117,14 +117,16 @@ async function runRemote(message: string, context: AgentContext, onSteps: StepLi
   }
 
   const pois = stopsFrom(response);
+  const places = response.places && response.places.length > 0 ? response.places : undefined;
   return {
     reply: [response.reply, ...warnings].filter(Boolean).join("\n\n"),
     steps: response.tool_calls.map((c) => ({ tool: c.tool, ms: c.ms, cache: c.cached ? "hit" : null, tokens: c.tokens })),
-    state_changed: [...(trip ? ["trip"] : []), ...(pois ? ["pois"] : [])],
+    state_changed: [...(trip ? ["trip"] : []), ...(pois ? ["pois"] : []), ...(places ? ["places"] : [])],
     source: "agent",
     trip,
     selectedRouteId: trip?.selected_route_id ?? undefined,
     pois,
+    places,
     chips: trip ? agentChips(trip) : [],
   };
 }
@@ -162,7 +164,7 @@ function stopsFrom(response: AgentApiResponse): PoiResult | undefined {
 
 function agentChips(trip: Trip): string[] {
   const selects = trip.routes.filter((r) => r.id !== trip.selected_route_id).map((r) => `Select ${r.route_type}`);
-  return [...selects, "Where should I stop overnight?", "What's the weather when I arrive?"];
+  return [...selects, "Where should I stop overnight?", "Where can we camp and eat?", "What's the weather when I arrive?"];
 }
 
 // ---- Mock mode: scripted stand-in over the fixtures ------------------------
@@ -201,7 +203,7 @@ async function runScripted(
 
   const finish = (
     reply: string,
-    extra: Partial<Pick<AgentTurnResult, "state_changed" | "trip" | "selectedRouteId" | "pois" | "chips">> = {},
+    extra: Partial<Pick<AgentTurnResult, "state_changed" | "trip" | "selectedRouteId" | "pois" | "places" | "chips">> = {},
   ): AgentTurnResult => ({
     reply,
     steps: steps.map((s) => ({ tool: s.tool, ms: s.ms ?? 0, cache: s.cache })),
@@ -210,6 +212,7 @@ async function runScripted(
     trip: extra.trip,
     selectedRouteId: extra.selectedRouteId,
     pois: extra.pois,
+    places: extra.places,
     chips: extra.chips ?? [],
   });
 
@@ -296,6 +299,37 @@ async function runScripted(
       });
     }
 
+    // Campsites and food: like the agent, around a night's stop (here: halfway along the route) and a
+    // lunch point (a quarter of the way), with one pick per group
+    if (/\bcamp|campsite|campground|\blunch\b|\bdinner\b/.test(lower)) {
+      if (!trip) return finish("There is no trip yet. Tell me where you are driving from and to.");
+      const route = trip.routes.find((r) => r.id === selectedRouteId) ?? trip.routes[0];
+      const index = buildMileIndex(route.geometry, route.distance_miles);
+      const at = (share: number) => pointAtMile(index, index.totalMiles * share) ?? route.geometry.coordinates[0];
+      const [nightLon, nightLat] = at(0.5);
+      const [lunchLon, lunchLat] = at(0.25);
+      const points: api.PlacePoint[] = [
+        { near: "night-1", label: `Night 1 · halfway along the ${route.route_type} route`, lat: nightLat, lon: nightLon, kinds: ["camping", "food"] },
+        { near: "lunch-1", label: `Lunch, day 1 · a quarter of the way`, lat: lunchLat, lon: lunchLon, kinds: ["food"] },
+      ];
+      const found = await step("find_places", () => api.findPlaces(points));
+      const places = found.map((group) => ({
+        ...group,
+        places: group.places.map((place, i) => ({
+          ...place,
+          recommended: i === 0,
+          reason: i === 0 ? `${place.distance_mi} mi from the stop, ${place.facts.slice(0, 2).join(", ")}` : null,
+        })),
+      }));
+      const pick = (near: string, kind: string) =>
+        places.find((g) => g.near === near && g.kind === kind)?.places[0]?.name ?? "nothing found";
+      return finish(
+        `For night 1, camp at ${pick("night-1", "camping")} and eat at ${pick("night-1", "food")}; ` +
+          `for lunch, ${pick("lunch-1", "food")}. Every option is on the map and in the list.`,
+        { state_changed: ["places"], places, chips: followUps(trip, selectedRouteId) },
+      );
+    }
+
     if (/stop|poi|food|eat|fuel|gas|coffee|near/.test(lower)) {
       if (!trip) return finish("There is no trip yet. Tell me where you are driving from and to.");
       // "along the route" searches around the midpoint of the selected route
@@ -370,5 +404,5 @@ function followUps(trip: Trip, selectedRouteId: number | null): string[] {
   const selects = trip.routes
     .filter((r) => r.id !== selectedRouteId)
     .map((r) => `Select ${r.route_type}`);
-  return [...selects, "Weather at destination", "Stops near destination", "Stops along the route"];
+  return [...selects, "Weather at destination", "Stops near destination", "Stops along the route", "Where to camp and eat"];
 }

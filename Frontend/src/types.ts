@@ -69,6 +69,45 @@ export interface PoiResult {
   items: Poi[];
 }
 
+export type PlaceKind = "camping" | "food";
+
+/** A campsite or place to eat from find_places (OpenStreetMap). */
+export interface PlaceOption {
+  id: string;
+  kind: PlaceKind;
+  /** camp_site, caravan_site, restaurant, fast_food, cafe, food_court */
+  category: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** From the stop or lunch point the search was around */
+  distance_mi: number;
+  /** Straight from the place's OpenStreetMap tags: "toilets", "tents allowed", "hours: ..." */
+  facts: string[];
+  website?: string;
+  /** The agent picked it */
+  recommended?: boolean;
+  /** Why the agent picked it */
+  reason?: string | null;
+}
+
+/** The places of one kind found near one point of the trip (an overnight stop or a lunch stop). */
+export interface PlaceGroup {
+  /** The plan_stops id the search was for */
+  near: string;
+  /** e.g. "Night 1 · San Benito County" or "Lunch, day 1 · near Gilroy" */
+  label: string;
+  kind: PlaceKind;
+  lat: number;
+  lon: number;
+  radius_mi: number;
+  /** openstreetmap, openrouteservice (fallback), none, or mock */
+  source: string;
+  /** Why a search came back empty or smaller than usual */
+  note?: string;
+  places: PlaceOption[];
+}
+
 export type CacheStatus = "hit" | "miss" | null;
 
 /** Tokens of the model call that requested a tool (shared by tool calls from the same call). */
@@ -132,6 +171,8 @@ export interface AgentApiResponse {
   reply: string;
   answer: AgentFinalAnswer;
   planned_stops: PlannedStop[];
+  /** Campsites and places to eat found this turn, picks marked; absent from older backends */
+  places?: PlaceGroup[];
   pois: { center: { lat: number; lon: number }; items: Poi[] } | null;
   tool_calls: AgentToolCall[];
   usage: { input_tokens: number; output_tokens: number; requests: number };
@@ -181,6 +222,7 @@ export interface AgentTurnResult extends AgentReply {
   trip?: Trip;
   selectedRouteId?: number;
   pois?: PoiResult;
+  places?: PlaceGroup[];
   chips: string[];
   failed?: boolean;
 }
