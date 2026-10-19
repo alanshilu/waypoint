@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { geoAlbers, geoGraticule, geoPath } from "d3-geo";
 import type { GeoPermissibleObjects } from "d3-geo";
 import { feature } from "topojson-client";
@@ -10,6 +11,10 @@ import { routeLabel } from "../format";
 import { useTrip } from "../state/TripProvider";
 import { useSize } from "../useSize";
 import type { Place } from "../types";
+import { citiesIn } from "../data/cities";
+import type { City } from "../data/cities";
+import { CALLOUT_POINTS, LABEL_POINTS, STATE_CODE_BY_FIPS } from "../data/states";
+import CityPopover from "./CityPopover";
 
 const MAX_ROUTE_POINTS = 500;
 // Footprint of the RouteComparison overlay, including its margins.
@@ -45,17 +50,78 @@ const STOPS_PADDING = 0.01;
 
 const shortName = (place: Place) => place.name.split(",")[0];
 
+const cityLabel = (city: City) => `${city.name}, ${city.state}`;
+
 export default function RouteMap() {
-  const { trip, tripLoading, selectedRouteId, hoverMile, pois, selectRoute, error } = useTrip();
+  const { trip, tripLoading, selectedRouteId, hoverMile, pois, selectRoute, error, busy, sendMessage } = useTrip();
   const [hoveredPoi, setHoveredPoi] = useState<number | null>(null);
   const [ref, { width, height }] = useSize<HTMLDivElement>();
   const [mode, setMode] = useState<FitMode>("usa");
+
+  // State labels and, before a trip exists, the city picker
+  const [hoveredState, setHoveredState] = useState<string | null>(null);
+  const [pinnedState, setPinnedState] = useState<string | null>(null);
+  const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
+  const [origin, setOrigin] = useState<City | null>(null);
+  const [destination, setDestination] = useState<City | null>(null);
+  const picking = !trip && !tripLoading;
 
   // Zoom to a new trip when it arrives; the toggle takes over from there.
   const tripId = trip?.id ?? null;
   useEffect(() => {
     setMode(tripId === null ? "usa" : "route");
+    // A trip replaces the picker; start it fresh if the trip goes away
+    setPinnedState(null);
+    setOrigin(null);
+    setDestination(null);
   }, [tripId]);
+
+  // A pinned popover closes on a click or tap anywhere but itself or a state (which re-pins)
+  useEffect(() => {
+    if (!pinnedState) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest(".city-popover, .map-state")) return;
+      setPinnedState(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [pinnedState]);
+
+  const closePopover = useCallback(() => {
+    const fips = pinnedState;
+    setPinnedState(null);
+    setHoveredState(null);
+    // back to the state it was opened from, for keyboard users
+    if (fips) document.querySelector<SVGPathElement>(`.map-state[data-fips="${fips}"]`)?.focus();
+  }, [pinnedState]);
+
+  const pickCity = (city: City) => {
+    if (busy) return;
+    if (!origin) {
+      setOrigin(city);
+    } else if (!destination) {
+      setDestination(city);
+      sendMessage(`Plan a trip from ${cityLabel(origin)} to ${cityLabel(city)}`);
+    }
+    setPinnedState(null);
+    setHoveredState(null);
+  };
+
+  const resetPicks = () => {
+    setOrigin(null);
+    setDestination(null);
+  };
+
+  const onStateKeyDown = (fips: string) => (event: KeyboardEvent) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpenedByKeyboard(true);
+      setPinnedState(fips);
+    } else if (event.key === "Escape") {
+      setPinnedState(null);
+    }
+  };
 
   // A new POI search zooms to its results so the numbered markers are readable.
   const stops = pois && pois.items.length > 0 ? pois : null;
@@ -118,7 +184,26 @@ export default function RouteMap() {
     const path = geoPath(projection);
     return {
       graticule: path(graticule) ?? "",
-      states: lower48.features.map((f) => ({ id: String(f.id), d: path(f) ?? "" })),
+      states: lower48.features.map((f) => {
+        const id = String(f.id);
+        const code = STATE_CODE_BY_FIPS[id] ?? "";
+        const area = path.area(f);
+        const [x, y] = (LABEL_POINTS[code] && projection(LABEL_POINTS[code])) || path.centroid(f);
+        // Tiny eastern states: label out in the Atlantic with a leader line, until zoomed in enough
+        const callout = CALLOUT_POINTS[code] && area < 2500 ? projection(CALLOUT_POINTS[code]) : null;
+        return {
+          id,
+          d: path(f) ?? "",
+          code,
+          name: String(f.properties?.name ?? ""),
+          x,
+          y,
+          label: callout ? { x: callout[0], y: callout[1] } : { x, y },
+          callout: callout !== null,
+          // small states get a smaller label so neighbours don't collide
+          small: area < 900,
+        };
+      }),
     };
   }, [projection]);
 
@@ -131,12 +216,60 @@ export default function RouteMap() {
   return (
     <div className="route-map" ref={ref}>
       {projection && path && base && (
-        <svg width={width} height={height} role="img" aria-label="Map of the lower 48 states with trip routes">
+        <svg
+          width={width}
+          height={height}
+          role={picking ? undefined : "img"}
+          aria-label={picking ? undefined : "Map of the lower 48 states with trip routes"}
+        >
           <path className="map-graticule" d={base.graticule} />
-          <g>
-            {base.states.map((s) => (
-              <path key={s.id} className="map-state" d={s.d} />
-            ))}
+          <g role={picking ? "group" : undefined} aria-label={picking ? "States: open one to pick a city" : undefined}>
+            {base.states.map((s) => {
+              const classes = ["map-state"];
+              if (picking) classes.push("pickable");
+              if (picking && (s.id === pinnedState || (!pinnedState && s.id === hoveredState))) classes.push("active");
+              return (
+                <path
+                  key={s.id}
+                  className={classes.join(" ")}
+                  d={s.d}
+                  data-fips={s.id}
+                  onMouseEnter={() => setHoveredState(s.id)}
+                  onMouseLeave={() => setHoveredState((current) => (current === s.id ? null : current))}
+                  {...(picking && {
+                    tabIndex: 0,
+                    role: "button",
+                    "aria-label": `${s.name}: pick a city`,
+                    "aria-expanded": pinnedState === s.id,
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      setOpenedByKeyboard(false);
+                      setPinnedState((current) => (current === s.id ? null : s.id));
+                    },
+                    onKeyDown: onStateKeyDown(s.id),
+                  })}
+                />
+              );
+            })}
+          </g>
+
+          {/* Below the routes and markers, and never in the way of the pointer */}
+          <g className="state-labels" aria-hidden="true">
+            {base.states.map((s) => {
+              const full = s.id === hoveredState || (picking && s.id === pinnedState);
+              const classes = ["state-label"];
+              if (s.small || s.callout) classes.push("small");
+              if (s.callout) classes.push("callout");
+              if (full) classes.push("full");
+              return (
+                <g key={s.id}>
+                  {s.callout && <line className="state-leader" x1={s.x} y1={s.y} x2={s.label.x - 8} y2={s.label.y} />}
+                  <text className={classes.join(" ")} x={s.label.x} y={s.label.y}>
+                    {full ? s.name : s.code}
+                  </text>
+                </g>
+              );
+            })}
           </g>
 
           {ordered.map(({ route, line }) => {
@@ -267,7 +400,21 @@ export default function RouteMap() {
         ) : (
           <>
             <h1>No trip yet</h1>
-            <p className="map-weather">Ask the agent for a route to see it drawn here.</p>
+            <p className="map-weather">Ask the agent for a route, or pick a start and an end city on the map.</p>
+            {picking && (origin || destination) && (
+              <div className="trip-picks" role="group" aria-label="Trip from the map">
+                <span className="trip-pick">
+                  <span className="trip-pick-label">From</span> {origin ? cityLabel(origin) : "…"}
+                </span>
+                <span className="trip-pick">
+                  <span className="trip-pick-label">To</span>{" "}
+                  {destination ? cityLabel(destination) : <span className="trip-pick-empty">pick a city</span>}
+                </span>
+                <button type="button" className="trip-picks-clear" disabled={busy} onClick={resetPicks}>
+                  Clear
+                </button>
+              </div>
+            )}
           </>
         )}
         <div className="segmented" role="group" aria-label="Map zoom">
@@ -305,6 +452,31 @@ export default function RouteMap() {
           </ol>
         </section>
       )}
+
+      {picking &&
+        !destination &&
+        base &&
+        (() => {
+          const fips = pinnedState ?? hoveredState;
+          const state = fips ? base.states.find((s) => s.id === fips) : null;
+          if (!state) return null;
+          return (
+            <CityPopover
+              stateName={state.name}
+              cities={citiesIn(state.code)}
+              picking={origin ? "destination" : "origin"}
+              origin={origin}
+              x={state.x}
+              y={state.y}
+              mapWidth={width}
+              mapHeight={height}
+              pinned={pinnedState === state.id}
+              focusOnOpen={openedByKeyboard}
+              onPick={pickCity}
+              onClose={closePopover}
+            />
+          );
+        })()}
 
       {tripLoading && (
         <p className="map-loading" role="status">

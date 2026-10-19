@@ -30,6 +30,7 @@ Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leav
 - **Points of interest.** Food, fuel, lodging and sights near the destination or along the selected route.
 - **Grounded answers.** The agent may only state numbers, dates and places that appear in its tool results, and it reports a failed tool rather than filling the gap.
 - **Visible reasoning.** Each tool call streams to the chat as it runs (server-sent events), and a trace drawer shows latency, cache hits and errors per call.
+- **Pick on the map.** States are labelled. Before a trip exists, you can choose a start and an end city from each state's five most populous cities (Census 2023 estimates) instead of typing.
 - **Mock mode.** The frontend runs entirely from fixtures, with no backend or API keys, for demos and UI work.
 - **Ready for a public demo.** One `docker compose up` starts everything. Cost limits cap agent use per visitor and per day, and a demo mode makes all trip and route writes agent-only.
 - **Bring your own key.** Heavy users can plug in their own Anthropic API key. Their turns are billed to them and skip the daily limit, and Waypoint never stores the key.
@@ -52,6 +53,9 @@ One live conversation, captured on 2026-10-18: the real agent (Claude Sonnet 5.5
 
 **5. Honest when the data is thin.** "Find somewhere to eat near the first overnight stop." The point-of-interest search found only two campsites, and the agent says so instead of naming a restaurant from memory.
 ![Point-of-interest search near the first overnight stop](docs/screenshots/05-poi-search.png)
+
+**6. Pick a trip on the map.** Before a trip exists, hovering a state previews its five largest cities, and clicking or tapping it pins the list. Choosing a start and then a destination sends "Plan a trip from San Francisco, CA to Austin, TX" to the agent. It works from the keyboard too: Tab to a state, then Enter.
+![Choosing a destination city in Texas after picking San Francisco](docs/screenshots/06-city-picker.png)
 
 ## How it works
 

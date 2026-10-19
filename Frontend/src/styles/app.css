@@ -398,6 +398,159 @@ button:disabled {
   stroke-linejoin: round;
 }
 
+/* Before a trip exists, states open the city picker */
+.map-state.pickable {
+  cursor: pointer;
+  transition: fill 120ms ease;
+}
+
+.map-state.pickable.active {
+  fill: var(--parchment-light);
+  stroke-opacity: 0.7;
+}
+
+.map-state.pickable:focus {
+  outline: none;
+}
+
+.map-state.pickable:focus-visible {
+  fill: var(--parchment-light);
+  stroke: var(--rust);
+  stroke-opacity: 1;
+  stroke-width: 2;
+}
+
+/* Two-letter codes, faint; the full name while a state is hovered. Never take pointer events. */
+.state-label {
+  font-family: var(--font-data);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  fill: var(--espresso);
+  fill-opacity: 0.32;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
+}
+
+.state-label.small {
+  font-size: 8px;
+}
+
+.state-label.callout {
+  text-anchor: start;
+}
+
+.state-leader {
+  stroke: var(--espresso);
+  stroke-opacity: 0.25;
+  stroke-width: 0.75;
+  pointer-events: none;
+}
+
+.state-label.full {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  fill-opacity: 0.75;
+  paint-order: stroke;
+  stroke: var(--parchment-light);
+  stroke-width: 3px;
+}
+
+.city-popover {
+  position: absolute;
+  z-index: 4;
+  padding: 10px 12px 8px;
+  background: var(--parchment-light);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 6px 14px rgba(58, 36, 24, 0.12);
+}
+
+/* A hover preview: read-only, and never in the way of the pointer moving on to the next state */
+.city-popover.preview {
+  pointer-events: none;
+  opacity: 0.94;
+}
+
+.city-popover h2 {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.city-popover-hint {
+  margin: 1px 0 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.city-popover ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.city-popover button {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+
+.city-popover button:hover:not(:disabled),
+.city-popover button:focus-visible {
+  background: var(--parchment-deep);
+  outline: none;
+}
+
+.city-popover button:disabled {
+  color: var(--ink-muted);
+}
+
+.city-popover-tag {
+  font-family: var(--font-data);
+  font-size: 11px;
+}
+
+/* The From / To chip in the map header */
+.trip-picks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--espresso);
+  border-radius: 14px;
+  background: var(--parchment-light);
+  font-size: 13px;
+}
+
+.trip-pick-label {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.trip-pick-empty {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.trip-picks-clear {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  text-decoration: underline;
+  color: var(--rust);
+}
+
 .map-route {
   cursor: pointer;
 }
