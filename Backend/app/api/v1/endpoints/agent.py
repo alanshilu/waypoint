@@ -19,7 +19,7 @@ from functools import partial
 from typing import Any
 
 import anthropic
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.sse import KEEPALIVE_COMMENT, format_sse_event
 from pydantic import BaseModel, Field
@@ -30,7 +30,13 @@ from app.core.config import settings
 
 router = APIRouter()
 
-_store: SessionStore = InMemorySessionStore(settings.agent_session_ttl_s, settings.agent_rate_limit_per_minute)
+_store: SessionStore = InMemorySessionStore(
+    settings.agent_session_ttl_s,
+    settings.agent_rate_limit_per_minute,
+    max_sessions=settings.agent_max_sessions,
+    sessions_per_ip_per_hour=settings.agent_sessions_per_ip_per_hour,
+    daily_turn_cap=settings.agent_daily_turn_cap,
+)
 KEEPALIVE_EVERY_S = 15
 
 
@@ -84,8 +90,15 @@ def admit(body: AgentMessageIn, store: SessionStore) -> Session:
         raise AgentError(429, "rate_limited",
                          f"At most {settings.agent_rate_limit_per_minute} messages a minute per session",
                          headers={"Retry-After": str(max(1, round(retry_after)))})
-    if not store.lock(session.id).acquire(blocking=False):
+    lock = store.lock(session.id)
+    if not lock.acquire(blocking=False):
         raise AgentError(409, "session_busy", "This session is still answering the previous message")
+    # counted last, so a rejected message never uses up the day's turns
+    allowed, retry_after = store.take_turn()
+    if not allowed:
+        lock.release()
+        raise AgentError(429, "daily_limit_reached", "Demo limit reached, try again tomorrow",
+                         headers={"Retry-After": str(max(1, round(retry_after)))})
     return session
 
 
@@ -150,8 +163,19 @@ def finish(store: SessionStore, session: Session, turn: orchestrator.AgentTurn) 
 
 
 @router.post("/sessions")
-def create_session(store: SessionStore = Depends(get_store)):
+def create_session(request: Request, store: SessionStore = Depends(get_store)):
+    # Behind a reverse proxy, run uvicorn with --proxy-headers so this is the visitor's address
+    client_ip = request.client.host if request.client else "unknown"
+    allowed, retry_after = store.allow_new_session(client_ip)
+    if not allowed:
+        return AgentError(429, "too_many_sessions",
+                          f"At most {settings.agent_sessions_per_ip_per_hour} new conversations an hour; "
+                          "try again later",
+                          headers={"Retry-After": str(max(1, round(retry_after)))}).response()
     session = store.create()
+    if session is None:
+        return AgentError(503, "demo_busy", "The demo is busy right now; try again in a few minutes",
+                          headers={"Retry-After": "300"}).response()
     return {"session_id": session.id, "expires_in_s": settings.agent_session_ttl_s}
 
 

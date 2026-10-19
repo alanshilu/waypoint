@@ -32,7 +32,11 @@ class Settings(BaseSettings):
     # Covers a slow route generation (ORS_ROUTE_TIMEOUT_S) plus the other tool and model calls of a turn
     agent_timeout_s: float = Field(default=180.0, validation_alias="AGENT_TIMEOUT_S")
     agent_rate_limit_per_minute: int = Field(default=10, validation_alias="AGENT_RATE_LIMIT_PER_MINUTE")
-    agent_session_ttl_s: int = Field(default=3600, validation_alias="AGENT_SESSION_TTL_S")
+    agent_session_ttl_s: int = Field(default=1800, validation_alias="AGENT_SESSION_TTL_S")
+    # Cost limits for a public demo; 0 turns a limit off. The daily cap resets at midnight UTC.
+    agent_max_sessions: int = Field(default=200, validation_alias="AGENT_MAX_SESSIONS")
+    agent_sessions_per_ip_per_hour: int = Field(default=5, validation_alias="AGENT_SESSIONS_PER_IP_PER_HOUR")
+    agent_daily_turn_cap: int = Field(default=200, validation_alias="AGENT_DAILY_TURN_CAP")
     # User turns kept per session; older turns are dropped from the front
     agent_history_max_turns: int = Field(default=12, validation_alias="AGENT_HISTORY_MAX_TURNS")
 

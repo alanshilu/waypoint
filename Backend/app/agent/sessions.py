@@ -9,6 +9,11 @@ it stores is plain JSON so it can move without changes.
 Consequences of the in-memory store: sessions are lost on restart, and with
 several worker processes each worker has its own sessions. Run one worker, or
 switch to a shared store, before scaling out.
+
+The store also holds the public demo's cost limits: at most max_sessions live
+sessions, at most sessions_per_ip_per_hour new sessions from one address, and
+at most daily_turn_cap agent turns per UTC day across everyone. 0 turns a limit
+off. Like the sessions, the counters are per process and reset on restart.
 """
 
 from __future__ import annotations
@@ -18,7 +23,12 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Protocol
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -30,22 +40,41 @@ class Session:
 
 
 class SessionStore(Protocol):
-    def create(self) -> Session: ...
+    def create(self) -> Session | None: ...
     def get(self, session_id: str) -> Session | None: ...
     def save(self, session: Session) -> None: ...
     def allow(self, session_id: str) -> tuple[bool, float]: ...
+    def allow_new_session(self, client_ip: str) -> tuple[bool, float]: ...
+    def take_turn(self) -> tuple[bool, float]: ...
     def lock(self, session_id: str) -> threading.Lock: ...
 
 
 class InMemorySessionStore:
     """Sessions in a dict, expiring after ttl_s without use, with a per-session sliding-window rate limit."""
 
-    def __init__(self, ttl_s: float, rate_per_minute: int, clock=time.monotonic):
+    def __init__(
+        self,
+        ttl_s: float,
+        rate_per_minute: int,
+        clock=time.monotonic,
+        *,
+        max_sessions: int = 0,
+        sessions_per_ip_per_hour: int = 0,
+        daily_turn_cap: int = 0,
+        utc_now: Callable[[], datetime] = _utc_now,
+    ):
         self.ttl_s = ttl_s
         self.rate_per_minute = rate_per_minute
+        self.max_sessions = max_sessions
+        self.sessions_per_ip_per_hour = sessions_per_ip_per_hour
+        self.daily_turn_cap = daily_turn_cap
         self._clock = clock
+        self._utc_now = utc_now
         self._sessions: dict[str, Session] = {}
         self._hits: dict[str, deque[float]] = {}
+        self._ip_hits: dict[str, deque[float]] = {}
+        self._turn_day = None
+        self._turns_today = 0
         self._locks: dict[str, threading.Lock] = {}
         self._mutex = threading.Lock()
 
@@ -55,14 +84,49 @@ class InMemorySessionStore:
             self._hits.pop(sid, None)
             self._locks.pop(sid, None)
 
-    def create(self) -> Session:
+    def create(self) -> Session | None:
+        """A new session, or None when max_sessions are already live."""
         with self._mutex:
             now = self._clock()
             self._expire(now)
+            if self.max_sessions and len(self._sessions) >= self.max_sessions:
+                return None
             session = Session(id=secrets.token_urlsafe(16), updated_at=now)
             self._sessions[session.id] = session
             self._locks[session.id] = threading.Lock()
             return session
+
+    def allow_new_session(self, client_ip: str) -> tuple[bool, float]:
+        """(allowed, retry_after_s) for one more session from client_ip this hour. Counts it when allowed."""
+        if not self.sessions_per_ip_per_hour:
+            return True, 0.0
+        with self._mutex:
+            now = self._clock()
+            for ip in list(self._ip_hits):  # forget addresses with nothing in the window
+                hits = self._ip_hits[ip]
+                while hits and now - hits[0] >= 3600:
+                    hits.popleft()
+                if not hits:
+                    del self._ip_hits[ip]
+            hits = self._ip_hits.setdefault(client_ip, deque())
+            if len(hits) >= self.sessions_per_ip_per_hour:
+                return False, max(0.0, 3600 - (now - hits[0]))
+            hits.append(now)
+            return True, 0.0
+
+    def take_turn(self) -> tuple[bool, float]:
+        """(allowed, retry_after_s) for one more agent turn today (UTC). Counts it when allowed."""
+        if not self.daily_turn_cap:
+            return True, 0.0
+        with self._mutex:
+            now = self._utc_now()
+            if now.date() != self._turn_day:
+                self._turn_day, self._turns_today = now.date(), 0
+            if self._turns_today >= self.daily_turn_cap:
+                midnight = datetime.combine(now.date() + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+                return False, (midnight - now).total_seconds()
+            self._turns_today += 1
+            return True, 0.0
 
     def get(self, session_id: str) -> Session | None:
         with self._mutex:

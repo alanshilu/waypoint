@@ -88,7 +88,7 @@ async function runRemote(message: string, context: AgentContext, onSteps: StepLi
   try {
     response = await ask(sessionId);
   } catch (error) {
-    // Sessions expire after an hour without use, and restart with the backend: start a new one once
+    // Sessions expire after a while without use (AGENT_SESSION_TTL_S), and restart with the backend: start a new one once
     if (!(error instanceof api.ApiError && error.code === "unknown_session")) throw error;
     sessionId = await api.createAgentSession();
     storeSession(sessionId);
