@@ -1,0 +1,14 @@
+.env
+.env.*
+.venv/
+venv/
+backups/
+evals/
+tests/
+typings/
+**/__pycache__/
+*.sqlite
+.pytest_cache/
+.ruff_cache/
+.vscode/
+docker-compose.yml
