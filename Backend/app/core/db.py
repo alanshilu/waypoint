@@ -13,4 +13,4 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()# Async SQLAlchemy engine and sessionmaker configuration placeholder (no coding allowed)
+        db.close()

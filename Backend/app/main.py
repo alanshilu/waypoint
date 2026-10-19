@@ -5,7 +5,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.endpoints import agent, location, pois, routes, trips, weather
+from app.api.v1.endpoints import agent, health, location, pois, routes, trips, weather
 from app.core.config import settings
 
 app = FastAPI()
@@ -35,3 +35,4 @@ app.include_router(pois.router, prefix="/pois", tags=["POIs"])
 app.include_router(trips.router, prefix="/trips", tags=["Trips"])
 app.include_router(routes.router, prefix="/routes", tags=["Routes"])
 app.include_router(agent.router, prefix="/agent", tags=["Agent"])
+app.include_router(health.router, prefix="/health", tags=["Health"])
