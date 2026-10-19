@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     db_user: str = Field(validation_alias="DB_USER")
     db_pass: str = Field(validation_alias="DB_PASS")
     db_name: str = Field(validation_alias="DB_NAME")
+    db_port: int = Field(default=5432, validation_alias="DB_PORT")
+    # libpq sslmode: "prefer" works locally; hosted Postgres such as Neon needs "require"
+    db_sslmode: str = Field(default="prefer", validation_alias="DB_SSLMODE")
     # Optional and unused for now: agent sessions are in memory (app/agent/sessions.py)
     redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
     ors_api_key: str = Field(validation_alias="ORS_API_KEY")
@@ -67,7 +70,9 @@ class Settings(BaseSettings):
             username=self.db_user,
             password=self.db_pass,
             host=self.db_host,
+            port=self.db_port,
             database=self.db_name,
+            query={"sslmode": self.db_sslmode},
         )
 
 
