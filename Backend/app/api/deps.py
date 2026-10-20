@@ -12,7 +12,7 @@ def internal_only(x_waypoint_internal: str | None = Header(default=None, alias=I
     """In a public demo, only the agent (which sends the shared secret) may call this endpoint."""
     if not settings.public_demo:
         return
-    secret = settings.internal_api_secret or ""
+    secret = settings.internal_api_token or ""
     if not x_waypoint_internal or not secrets.compare_digest(x_waypoint_internal.encode(), secret.encode()):
         raise HTTPException(status_code=403, detail="This endpoint is not available in the public demo")
 

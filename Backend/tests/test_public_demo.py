@@ -32,7 +32,7 @@ def client():
 @pytest.fixture
 def public_demo(monkeypatch):
     monkeypatch.setattr(settings, "public_demo", True)
-    monkeypatch.setattr(settings, "internal_api_secret", SECRET)
+    monkeypatch.setattr(settings, "internal_api_token", SECRET)
 
 
 def test_trip_list_is_gone(client, public_demo):
@@ -75,13 +75,22 @@ def test_public_demo_without_a_secret_does_not_start(monkeypatch):
     for name, value in REQUIRED.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setenv("PUBLIC_DEMO", "true")
-    monkeypatch.delenv("INTERNAL_API_SECRET", raising=False)
-    with pytest.raises(ValidationError, match="INTERNAL_API_SECRET"):
+    monkeypatch.delenv("INTERNAL_API_TOKEN", raising=False)
+    with pytest.raises(ValidationError, match="INTERNAL_API_TOKEN"):
         Settings(_env_file=None)
 
 
+def test_the_earlier_secret_name_still_works(monkeypatch):
+    for name, value in REQUIRED.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("PUBLIC_DEMO", "true")
+    monkeypatch.delenv("INTERNAL_API_TOKEN", raising=False)
+    monkeypatch.setenv("INTERNAL_API_SECRET", SECRET)
+    assert Settings(_env_file=None).internal_api_token == SECRET
+
+
 def test_agent_tools_send_the_secret(monkeypatch):
-    monkeypatch.setattr(settings, "internal_api_secret", SECRET)
+    monkeypatch.setattr(settings, "internal_api_token", SECRET)
     sent = []
 
     def post(url, **kwargs):

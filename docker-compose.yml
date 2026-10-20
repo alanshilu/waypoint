@@ -29,7 +29,7 @@ services:
       ORS_API_KEY: ${ORS_API_KEY:?Set ORS_API_KEY in .env (copy .env.example)}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PUBLIC_DEMO: ${PUBLIC_DEMO:-false}
-      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-${INTERNAL_API_SECRET:-}}
       AGENT_DAILY_TURN_CAP: ${AGENT_DAILY_TURN_CAP:-200}
     depends_on:
       db:

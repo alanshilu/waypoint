@@ -245,7 +245,7 @@ Set these in the root `.env` before `docker compose up --build`:
 
 ```bash
 PUBLIC_DEMO=true
-INTERNAL_API_SECRET=<a long random string>
+INTERNAL_API_TOKEN=<a long random string>
 POSTGRES_PASSWORD=<a strong password>
 ```
 
@@ -254,7 +254,7 @@ With `PUBLIC_DEMO=true`:
 - `GET /trips/trips` is turned off.
 - Creating trips and generating or selecting routes only works for callers sending the shared secret, which in practice means only the agent.
 - The frontend is built so that a route picked on the map stays in the browser and goes to the agent with the next message.
-- The backend won't start without `INTERNAL_API_SECRET`.
+- The backend won't start without `INTERNAL_API_TOKEN`.
 
 The cost limits are on in every mode. They're set in `Backend/.env.example`, and 0 turns a limit off:
 
