@@ -33,3 +33,9 @@ Backend/evals/reports/*
 *.log
 .DS_Store
 Thumbs.db
+.neon
+
+neon.ts
+/package.json
+/package-lock.json
+.env.local

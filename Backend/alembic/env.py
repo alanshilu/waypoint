@@ -1,7 +1,12 @@
 from alembic import context
+from sqlalchemy import create_engine, pool
 
-from app.core.db import Base, engine
+from app.core.config import settings
+from app.core.db import Base
 from app.models import trip, route, poi  # noqa: F401
+
+# Direct connection (DATABASE_URL_UNPOOLED on Neon), not the app's pooled one
+engine = create_engine(settings.migration_database_url, poolclass=pool.NullPool)
 
 target_metadata = Base.metadata
 

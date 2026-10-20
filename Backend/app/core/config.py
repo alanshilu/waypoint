@@ -2,14 +2,19 @@ from pathlib import Path
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine import URL
+from sqlalchemy.engine import URL, make_url
 
 
 class Settings(BaseSettings):
-    db_host: str = Field(validation_alias="DB_HOST")
-    db_user: str = Field(validation_alias="DB_USER")
-    db_pass: str = Field(validation_alias="DB_PASS")
-    db_name: str = Field(validation_alias="DB_NAME")
+    # Neon: `neon env pull` writes the pooled URL (app traffic) and the direct one (migrations).
+    # When DATABASE_URL is set it wins and the DB_* settings below are ignored.
+    database_url_env: str | None = Field(default=None, validation_alias="DATABASE_URL")
+    database_url_unpooled_env: str | None = Field(default=None, validation_alias="DATABASE_URL_UNPOOLED")
+    # Any other Postgres, e.g. a local one
+    db_host: str | None = Field(default=None, validation_alias="DB_HOST")
+    db_user: str | None = Field(default=None, validation_alias="DB_USER")
+    db_pass: str | None = Field(default=None, validation_alias="DB_PASS")
+    db_name: str | None = Field(default=None, validation_alias="DB_NAME")
     db_port: int = Field(default=5432, validation_alias="DB_PORT")
     # libpq sslmode: "prefer" works locally; hosted Postgres such as Neon needs "require"
     db_sslmode: str = Field(default="prefer", validation_alias="DB_SSLMODE")
@@ -72,13 +77,32 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    @model_validator(mode="after")
+    def _needs_a_database(self):
+        missing = [n for n, v in [("DB_HOST", self.db_host), ("DB_USER", self.db_user),
+                                  ("DB_PASS", self.db_pass), ("DB_NAME", self.db_name)] if not v]
+        if not self.database_url_env and missing:
+            raise ValueError(f"Set DATABASE_URL, or {', '.join(missing)}")
+        return self
+
+    # Backend/.env, plus the .env.local that `neon env pull` writes in the repo root.
+    # Real environment variables (Render, docker-compose) override both.
     model_config = SettingsConfigDict(
-        env_file=Path(__file__).resolve().parents[2] / ".env",
+        env_file=(Path(__file__).resolve().parents[3] / ".env.local", Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
+        extra="ignore",
     )
+
+    @staticmethod
+    def _psycopg2(url: str) -> URL:
+        # Neon's URLs say postgresql://; keep their sslmode and channel_binding parameters
+        return make_url(url).set(drivername="postgresql+psycopg2")
 
     @property
     def database_url(self) -> URL:
+        """For the app: Neon's pooled connection when DATABASE_URL is set."""
+        if self.database_url_env:
+            return self._psycopg2(self.database_url_env)
         return URL.create(
             "postgresql+psycopg2",
             username=self.db_user,
@@ -88,6 +112,13 @@ class Settings(BaseSettings):
             database=self.db_name,
             query={"sslmode": self.db_sslmode},
         )
+
+    @property
+    def migration_database_url(self) -> URL:
+        """For Alembic: a direct connection, since Neon's pooler (transaction mode) drops session state."""
+        if self.database_url_unpooled_env:
+            return self._psycopg2(self.database_url_unpooled_env)
+        return self.database_url
 
 
 # Import this single instance anywhere you need config:
