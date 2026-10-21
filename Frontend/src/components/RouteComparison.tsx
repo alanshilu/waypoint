@@ -10,8 +10,22 @@ import {
   scenicBreakdown,
   HALF_SCORE_DENSITY_M_PER_MILE,
 } from "../format";
+import { highwayLabel, highwaysAlong, useHighways } from "../highways";
+import type { Highway } from "../highways";
 import { useTrip } from "../state/TripProvider";
 import type { Route } from "../types";
+
+/** "via I-580 · I-5": the Interstates and US routes this route follows, in driving order. */
+function ViaLine({ route, highways }: { route: Route; highways: Highway[] | null }) {
+  if (!highways) return null;
+  const via = highwaysAlong(route.geometry, highways).map((h) => highwayLabel(h.highway));
+  const text = via.length > 0 ? `via ${via.join(" · ")}` : "No Interstate or US-route stretches";
+  return (
+    <p className="route-via" title={text}>
+      {text}
+    </p>
+  );
+}
 
 const num = (n: number, digits = 0) =>
   n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -43,7 +57,7 @@ function ScenicTooltip({ route }: { route: Route }) {
   );
 }
 
-function RouteCard({ route, baseline }: { route: Route; baseline: Route | null }) {
+function RouteCard({ route, baseline, highways }: { route: Route; baseline: Route | null; highways: Highway[] | null }) {
   const { selectedRouteId, selectRoute } = useTrip();
   const selected = route.id === selectedRouteId;
 
@@ -67,6 +81,8 @@ function RouteCard({ route, baseline }: { route: Route; baseline: Route | null }
         <span className="route-card-name">{routeLabel(route.route_type)}</span>
         <span className="route-card-state">{selected ? "Selected" : "Select"}</span>
       </button>
+
+      <ViaLine route={route} highways={highways} />
 
       <dl className="route-stats">
         <div>
@@ -114,6 +130,7 @@ function RouteCard({ route, baseline }: { route: Route; baseline: Route | null }
 
 export default function RouteComparison() {
   const { trip } = useTrip();
+  const highways = useHighways();
   if (!trip || trip.routes.length === 0) return null;
 
   const fastest = trip.routes.find((r) => r.route_type === "fastest") ?? null;
@@ -125,7 +142,7 @@ export default function RouteComparison() {
   return (
     <section className="route-comparison" aria-label="Route comparison">
       {ordered.map((route) => (
-        <RouteCard key={route.id} route={route} baseline={route === fastest ? null : fastest} />
+        <RouteCard key={route.id} route={route} baseline={route === fastest ? null : fastest} highways={highways} />
       ))}
     </section>
   );

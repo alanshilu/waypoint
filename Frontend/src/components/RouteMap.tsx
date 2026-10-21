@@ -14,15 +14,19 @@ import type { Place, PlaceOption } from "../types";
 import { citiesIn } from "../data/cities";
 import type { City } from "../data/cities";
 import { CALLOUT_POINTS, LABEL_POINTS, STATE_CODE_BY_FIPS } from "../data/states";
+import { ROUTE_66, ROUTE_66_TITLE } from "../data/route66";
+import { highwaysAlong, linesOf, useHighways } from "../highways";
+import type { Highway } from "../highways";
 import CityPopover from "./CityPopover";
 import PlacesPanel from "./PlacesPanel";
 
 const MAX_ROUTE_POINTS = 500;
-// Footprint of the RouteComparison overlay, including its margins.
-const CARDS_HEIGHT = 285;
+// Footprint of the RouteComparison overlay, including its margins (and its "via I-5" line).
+const CARDS_HEIGHT = 305;
 const CARDS_WIDTH = 520;
 // Footprint of the title, weather line and zoom toggle in the top left.
 const HEADER_HEIGHT = 180;
+const HEADER_WIDTH = 300;
 
 // Lower 48 + DC: drop Alaska (02), Hawaii (15), Puerto Rico (72) and the
 // other territories us-atlas ships (FIPS above 56).
@@ -51,6 +55,42 @@ const PLACES_LIST_WIDTH = 330;
 // The backend searches a 2 km box, so keep at least this much around the stops (degrees).
 const STOPS_PADDING = 0.01;
 
+// Highway shields: at most this many, at least this far apart (px), and clear of the map's edge
+const MAX_SHIELDS = 36;
+const SHIELD_SPACING = { usa: 110, zoomed: 75 };
+const SHIELD_MARGIN = 18;
+// Where the Route 66 label goes: the first of these towns that is on screen
+const ROUTE_66_LABEL_AT: [number, number][] = [
+  [-101.8313, 35.222], // Amarillo
+  [-111.6513, 35.1983], // Flagstaff
+  [-94.5133, 37.0842], // Joplin
+  [-117.0173, 34.8958], // Barstow
+];
+const ROUTE_66_ID = "route-66";
+
+interface Shield {
+  highway: Highway;
+  x: number;
+  y: number;
+  onRoute: boolean;
+}
+
+/** Points along a highway to try for its shield, from the middle of its longest line outwards. */
+function shieldCandidates(highway: Highway): [number, number][] {
+  const line = linesOf(highway.geometry).reduce((a, b) => (b.length > a.length ? b : a));
+  const mid = line.length >> 1;
+  const step = Math.max(1, Math.floor(line.length / 8));
+  const out: [number, number][] = [];
+  for (let k = 0; k <= line.length; k += step) {
+    for (const i of k === 0 ? [mid] : [mid + k, mid - k]) {
+      if (i >= 0 && i < line.length) out.push(line[i] as [number, number]);
+    }
+  }
+  return out;
+}
+
+const shieldWidth = (text: string) => 9 + text.length * 6.6;
+
 const shortName = (place: Place) => place.name.split(",")[0];
 
 const cityLabel = (city: City) => `${city.name}, ${city.state}`;
@@ -60,6 +100,9 @@ export default function RouteMap() {
     useTrip();
   const [hoveredPoi, setHoveredPoi] = useState<number | null>(null);
   const [hoveredPlace, setHoveredPlace] = useState<string | null>(null);
+  // The Interstates and US routes, drawn faded; null until loaded (or if they can't be)
+  const highways = useHighways();
+  const [hoveredHighway, setHoveredHighway] = useState<string | null>(null);
 
   // Campsites and places to eat, once each (a place can be found from two stops); a pick wins
   const placeMarkers = useMemo(() => {
@@ -235,6 +278,87 @@ export default function RouteMap() {
     (a, b) => Number(a.route.id === selectedRouteId) - Number(b.route.id === selectedRouteId),
   );
 
+  // The highways the selected route drives on: drawn stronger than the rest of the network
+  const selectedGeometry = routes.find((r) => r.route.id === selectedRouteId)?.route.geometry ?? null;
+  const onRoute = useMemo(
+    () => (highways && selectedGeometry ? highwaysAlong(selectedGeometry, highways) : []),
+    [highways, selectedGeometry],
+  );
+  const onRouteIds = useMemo(() => new Set(onRoute.map((h) => h.highway.id)), [onRoute]);
+
+  const network = useMemo(() => {
+    if (!projection || !highways) return null;
+    const draw = geoPath(projection);
+    return {
+      // US routes first, so Interstates draw over them
+      highways: [...highways]
+        .sort((a, b) => Number(a.kind === "interstate") - Number(b.kind === "interstate"))
+        .map((highway) => ({ highway, d: draw(highway.geometry) ?? "" })),
+      route66: draw(ROUTE_66) ?? "",
+    };
+  }, [projection, highways]);
+
+  // Shields: the selected route's highways first, on the route itself, then the rest of the network,
+  // spaced out greedily. Zoomed out, only Interstates get one.
+  const shields = useMemo(() => {
+    if (!projection || !highways) return [];
+    const spacing = zoomed ? SHIELD_SPACING.zoomed : SHIELD_SPACING.usa;
+    const placed: Shield[] = [];
+    // trip endpoints keep their labels clear
+    const blocked = (trip ? [trip.origin, trip.destination] : [])
+      .map((p) => projection([p.lon, p.lat]))
+      .filter((xy): xy is [number, number] => xy !== null);
+    // nor under the overlays: the title and zoom toggle, the route cards, the places or stops list
+    const covered: [number, number, number, number][] = [[0, 0, HEADER_WIDTH, HEADER_HEIGHT]];
+    if (hasRoutes) covered.push([width - CARDS_WIDTH, 0, width, CARDS_HEIGHT]);
+    if (hasPlaces || stops) covered.push([0, 0, hasPlaces ? PLACES_LIST_WIDTH : STOPS_LIST_WIDTH, height]);
+    const onScreen = (x: number, y: number) =>
+      x > SHIELD_MARGIN &&
+      y > SHIELD_MARGIN &&
+      x < width - SHIELD_MARGIN &&
+      y < height - SHIELD_MARGIN &&
+      covered.every(([x0, y0, x1, y1]) => x < x0 - SHIELD_MARGIN || x > x1 + SHIELD_MARGIN || y < y0 || y > y1 + SHIELD_MARGIN);
+    const clear = (x: number, y: number, gap: number) =>
+      placed.every((s) => Math.hypot(s.x - x, s.y - y) >= gap) &&
+      blocked.every(([bx, by]) => Math.hypot(bx - x, by - y) >= 40);
+    for (const { highway, at } of onRoute) {
+      const xy = projection(at as [number, number]);
+      // a route's own shields may sit closer together: they're the ones that matter
+      if (xy && onScreen(xy[0], xy[1]) && clear(xy[0], xy[1], spacing * 0.6)) {
+        placed.push({ highway, x: xy[0], y: xy[1], onRoute: true });
+      }
+    }
+    const rest = highways
+      .filter((h) => !onRouteIds.has(h.id) && (zoomed || h.kind === "interstate"))
+      // Interstates, then shorter (more important) numbers: I-5 and I-80 before I-805
+      .sort(
+        (a, b) =>
+          Number(a.kind !== "interstate") - Number(b.kind !== "interstate") ||
+          a.number.length - b.number.length ||
+          parseInt(a.number, 10) - parseInt(b.number, 10),
+      );
+    for (const highway of rest) {
+      if (placed.length >= MAX_SHIELDS) break;
+      for (const point of shieldCandidates(highway)) {
+        const xy = projection(point);
+        if (xy && onScreen(xy[0], xy[1]) && clear(xy[0], xy[1], spacing)) {
+          placed.push({ highway, x: xy[0], y: xy[1], onRoute: false });
+          break;
+        }
+      }
+    }
+    return placed;
+  }, [projection, highways, onRoute, onRouteIds, zoomed, width, height, trip, hasRoutes, hasPlaces, stops]);
+
+  const route66Label = useMemo(() => {
+    if (!projection) return null;
+    for (const town of ROUTE_66_LABEL_AT) {
+      const xy = projection(town);
+      if (xy && xy[0] > 60 && xy[1] > 30 && xy[0] < width - 60 && xy[1] < height - 30) return xy;
+    }
+    return null;
+  }, [projection, width, height]);
+
   return (
     <div className="route-map" ref={ref}>
       {projection && path && base && (
@@ -274,6 +398,43 @@ export default function RouteMap() {
               );
             })}
           </g>
+
+          {/* The highway network, faded; the selected route's highways stronger, a hovered one strongest */}
+          {network && (
+            <g className="highways" aria-hidden="true">
+              {network.highways.map(({ highway, d }) => {
+                const classes = ["highway", highway.kind];
+                if (onRouteIds.has(highway.id)) classes.push("on-route");
+                if (hoveredHighway === highway.id) classes.push("active");
+                return <path key={highway.id} className={classes.join(" ")} d={d} />;
+              })}
+              <path className={hoveredHighway === ROUTE_66_ID ? "route66 active" : "route66"} d={network.route66} />
+              {/* hover targets, once there's a trip: before that a click on a state opens the city picker */}
+              {!picking && (
+                <g className="highway-hits">
+                  {network.highways.map(({ highway, d }) => (
+                    <path
+                      key={highway.id}
+                      className="highway-hit"
+                      d={d}
+                      onMouseEnter={() => setHoveredHighway(highway.id)}
+                      onMouseLeave={() => setHoveredHighway((h) => (h === highway.id ? null : h))}
+                    >
+                      <title>{highway.name}</title>
+                    </path>
+                  ))}
+                  <path
+                    className="highway-hit"
+                    d={network.route66}
+                    onMouseEnter={() => setHoveredHighway(ROUTE_66_ID)}
+                    onMouseLeave={() => setHoveredHighway((h) => (h === ROUTE_66_ID ? null : h))}
+                  >
+                    <title>{ROUTE_66_TITLE}</title>
+                  </path>
+                </g>
+              )}
+            </g>
+          )}
 
           {/* Below the routes and markers, and never in the way of the pointer */}
           <g className="state-labels" aria-hidden="true">
@@ -326,6 +487,44 @@ export default function RouteMap() {
               </text>
             );
           })}
+
+          {/* Highway shields over the routes, so the selected route's own shields read on top of it */}
+          {network && (
+            <g className={picking ? "shields passive" : "shields"} aria-hidden="true">
+              {route66Label && (
+                <text
+                  className={hoveredHighway === ROUTE_66_ID ? "route66-label active" : "route66-label"}
+                  x={route66Label[0]}
+                  y={route66Label[1] - 9}
+                  textAnchor="middle"
+                >
+                  Route 66
+                </text>
+              )}
+              {shields.map(({ highway, x, y, onRoute: on }) => {
+                const text = highway.kind === "interstate" ? `I-${highway.number}` : highway.number;
+                const w = shieldWidth(text);
+                const classes = ["shield", highway.kind];
+                if (on) classes.push("on-route");
+                if (hoveredHighway === highway.id) classes.push("active");
+                return (
+                  <g
+                    key={highway.id}
+                    className={classes.join(" ")}
+                    transform={`translate(${x} ${y})`}
+                    onMouseEnter={() => setHoveredHighway(highway.id)}
+                    onMouseLeave={() => setHoveredHighway((h) => (h === highway.id ? null : h))}
+                  >
+                    <title>{highway.name}</title>
+                    <rect x={-w / 2} y={-7.5} width={w} height={15} rx={highway.kind === "interstate" ? 3.5 : 1} />
+                    <text textAnchor="middle" dominantBaseline="central">
+                      {text}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
 
           {trip &&
             [trip.origin, trip.destination].map((place, i) => {

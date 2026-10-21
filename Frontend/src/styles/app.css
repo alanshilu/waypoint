@@ -561,6 +561,124 @@ button:disabled {
   color: var(--rust);
 }
 
+/* The Interstate and US-route network: a faded backdrop under the trip's routes */
+.highway {
+  fill: none;
+  stroke: var(--espresso);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+  transition: stroke-opacity 120ms ease, stroke-width 120ms ease;
+}
+
+.highway.us {
+  stroke-opacity: 0.13;
+  stroke-width: 0.7;
+}
+
+.highway.interstate {
+  stroke-opacity: 0.24;
+  stroke-width: 1.1;
+}
+
+/* the highways the selected route drives on, beyond where the route leaves them */
+.highway.on-route {
+  stroke: var(--route-selected);
+  stroke-opacity: 0.5;
+  stroke-width: 1.6;
+}
+
+.highway.active {
+  stroke-opacity: 0.9;
+  stroke-width: 2.2;
+}
+
+.highway-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 9;
+  pointer-events: stroke;
+}
+
+.route66 {
+  fill: none;
+  stroke: var(--rust);
+  stroke-opacity: 0.4;
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+
+.route66.active {
+  stroke-opacity: 0.95;
+  stroke-width: 2;
+}
+
+.route66-label {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-style: italic;
+  fill: var(--rust);
+  fill-opacity: 0.75;
+  paint-order: stroke;
+  stroke: var(--parchment);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.route66-label.active {
+  fill-opacity: 1;
+}
+
+.shield {
+  opacity: 0.55;
+  cursor: default;
+  transition: opacity 120ms ease;
+}
+
+.shields.passive .shield {
+  pointer-events: none;
+}
+
+.shield text {
+  font-family: var(--font-data);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.shield.interstate rect {
+  fill: var(--espresso);
+}
+
+.shield.interstate text {
+  fill: var(--parchment-light);
+}
+
+.shield.us rect {
+  fill: var(--parchment-light);
+  stroke: var(--espresso);
+  stroke-width: 1;
+}
+
+.shield.us text {
+  fill: var(--espresso);
+}
+
+.shield.on-route,
+.shield.active {
+  opacity: 1;
+}
+
+.shield.on-route.interstate rect {
+  fill: var(--route-selected);
+}
+
+.shield.on-route.us rect {
+  stroke: var(--route-selected);
+  stroke-width: 1.5;
+}
+
 .map-route {
   cursor: pointer;
 }
@@ -740,6 +858,22 @@ button:disabled {
 .route-card-state {
   font-size: 12px;
   color: var(--ink-muted);
+}
+
+.route-via {
+  margin: 0;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-data);
+  font-size: 12px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.route-card.selected .route-via {
+  color: var(--espresso);
 }
 
 .route-card.selected .route-card-state {
