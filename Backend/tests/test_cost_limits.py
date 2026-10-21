@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+from app.agent.limits import InMemoryLimits
 from app.agent.sessions import InMemorySessionStore
 from app.api.v1.endpoints import agent as agent_api
 from app.core.config import Settings
@@ -14,11 +15,13 @@ from test_settings import REQUIRED
 
 
 @pytest.fixture
-def use_store():
-    """Serves the given store to the API for one test."""
+def serve():
+    """Serves the given store and limits to the API for one test."""
 
-    def use(store):
+    def use(store=None, limits=None):
+        store = store or InMemorySessionStore(3600)
         app.dependency_overrides[agent_api.get_store] = lambda: store
+        app.dependency_overrides[agent_api.get_limits] = lambda: limits or InMemoryLimits(10)
         return TestClient(app)
 
     yield use
@@ -27,8 +30,8 @@ def use_store():
 
 # (a) new sessions per IP
 
-def test_sessions_per_ip_are_limited_per_hour(use_store):
-    client = use_store(InMemorySessionStore(3600, 10, sessions_per_ip_per_hour=2))
+def test_sessions_per_ip_are_limited_per_hour(serve):
+    client = serve(limits=InMemoryLimits(10, sessions_per_ip_per_hour=2))
     assert client.post("/agent/sessions").status_code == 200
     assert client.post("/agent/sessions").status_code == 200
     r = client.post("/agent/sessions")
@@ -39,19 +42,19 @@ def test_sessions_per_ip_are_limited_per_hour(use_store):
 
 def test_ip_limit_is_per_address_and_the_window_slides():
     now = [0.0]
-    s = InMemorySessionStore(3600, 10, clock=lambda: now[0], sessions_per_ip_per_hour=1)
-    assert s.allow_new_session("203.0.113.1") == (True, 0.0)
-    assert s.allow_new_session("203.0.113.1")[0] is False
-    assert s.allow_new_session("203.0.113.2")[0] is True
+    limits = InMemoryLimits(10, clock=lambda: now[0], sessions_per_ip_per_hour=1)
+    assert limits.allow_new_session("203.0.113.1") == (True, 0.0)
+    assert limits.allow_new_session("203.0.113.1")[0] is False
+    assert limits.allow_new_session("203.0.113.2")[0] is True
     now[0] = 3600
-    assert s.allow_new_session("203.0.113.1")[0] is True
+    assert limits.allow_new_session("203.0.113.1")[0] is True
 
 
 # (b) daily turn cap
 
-def test_daily_turn_cap_returns_a_clean_429_until_midnight_utc(use_store, monkeypatch):
+def test_daily_turn_cap_returns_a_clean_429_until_midnight_utc(serve, monkeypatch):
     today = [datetime(2026, 10, 19, 22, 0, tzinfo=timezone.utc)]
-    client = use_store(InMemorySessionStore(3600, 10, daily_turn_cap=2, utc_now=lambda: today[0]))
+    client = serve(limits=InMemoryLimits(10, daily_turn_cap=2, utc_now=lambda: today[0]))
     install(monkeypatch, [final_response(), final_response(), final_response()])
     sid = client.post("/agent/sessions").json()["session_id"]
     assert client.post("/agent/message", json={"session_id": sid, "message": "1"}).status_code == 200
@@ -69,9 +72,9 @@ def test_daily_turn_cap_returns_a_clean_429_until_midnight_utc(use_store, monkey
     assert client.post("/agent/message", json={"session_id": sid, "message": "4"}).status_code == 200
 
 
-def test_rejected_messages_do_not_use_up_the_cap(use_store, monkeypatch):
-    store = InMemorySessionStore(3600, 10, daily_turn_cap=1)
-    client = use_store(store)
+def test_rejected_messages_do_not_use_up_the_cap(serve, monkeypatch):
+    store = InMemorySessionStore(3600)
+    client = serve(store, InMemoryLimits(10, daily_turn_cap=1))
     install(monkeypatch, [final_response()])
     assert client.post("/agent/message", json={"session_id": "nope", "message": "1"}).status_code == 404
     sid = client.post("/agent/sessions").json()["session_id"]
@@ -83,9 +86,9 @@ def test_rejected_messages_do_not_use_up_the_cap(use_store, monkeypatch):
 
 # (c) session TTL and live-session cap
 
-def test_live_sessions_are_capped_until_one_expires(use_store):
+def test_live_sessions_are_capped_until_one_expires(serve):
     now = [0.0]
-    client = use_store(InMemorySessionStore(ttl_s=1800, rate_per_minute=10, clock=lambda: now[0], max_sessions=2))
+    client = serve(InMemorySessionStore(ttl_s=1800, clock=lambda: now[0], max_sessions=2))
     assert client.post("/agent/sessions").status_code == 200
     assert client.post("/agent/sessions").status_code == 200
     r = client.post("/agent/sessions")

@@ -186,7 +186,9 @@ def main() -> int:
 
     import requests
 
-    from app.agent.orchestrator import client, run_agent_turn
+    from app.agent.orchestrator import get_agent, run_agent_turn
+
+    client = get_agent().clients.server  # the judge runs on the server's key too
     from app.core.config import settings
 
     base = settings.api_base_url

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from geoalchemy2.shape import from_shape
 from shapely.geometry import LineString
 
-from app.agent.orchestrator import model_view
+from app.agent.model_view import model_view
 from app.api.v1.serializers import route_to_dict
 from app.services import routing_service
 from app.services.db_route_service import save_routes_to_db

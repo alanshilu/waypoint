@@ -1,12 +1,13 @@
 """
-POST /agent/message and /agent/message/stream with the Anthropic client mocked.
-No model, network or database is used: the fake client returns scripted
-responses and the tools are replaced with stubs.
+POST /agent/message and /agent/message/stream with the Anthropic client faked.
+No model, network or database is used: the agent is built with fake model clients
+that return scripted responses, and with stub tools.
 """
 
 import json
 import threading
 import time
+from contextlib import contextmanager
 
 import anthropic
 import httpx
@@ -14,8 +15,10 @@ import pytest
 from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaThinkingBlock, BetaToolUseBlock, BetaUsage
 from fastapi.testclient import TestClient
 
-from app.agent import orchestrator
-from app.agent.sessions import InMemorySessionStore, to_jsonable, trim_history
+from app.agent.history import to_jsonable, trim_history
+from app.agent.limits import InMemoryLimits
+from app.agent.orchestrator import Agent, get_agent
+from app.agent.sessions import InMemorySessionStore
 from app.api.v1.endpoints import agent as agent_api
 from app.core.config import settings
 from app.main import app
@@ -66,25 +69,72 @@ class FakeMessages:
         return item
 
 
+def client_over(messages: FakeMessages):
+    return type("C", (), {"beta": type("B", (), {"messages": messages})()})()
+
+
+class FakeClients:
+    """
+    ModelClients for tests: the server's client answers from `server`; a client opened on a user's key
+    answers from `own`, and records the key and that it was closed.
+    """
+
+    def __init__(self, server: FakeMessages, own: FakeMessages | None = None):
+        self.server, self.own = server, own or FakeMessages([])
+        self.keys: list[str] = []
+        self.closed = 0
+
+    @contextmanager
+    def open(self, api_key):
+        if api_key is None:
+            yield client_over(self.server)
+            return
+        self.keys.append(api_key)
+        try:
+            yield client_over(self.own)
+        finally:
+            self.closed += 1
+
+
+# The tools the test agent has; a test adds the stubs it needs (see the tools fixture)
+TOOLS: dict = {}
+
+
+@pytest.fixture(autouse=True)
+def no_tools():
+    TOOLS.clear()
+    yield
+    TOOLS.clear()
+
+
+def use_agent(clients) -> None:
+    """The endpoints get an agent on these clients, with TOOLS."""
+    app.dependency_overrides[get_agent] = lambda: Agent(clients, TOOLS, [])
+
+
 def install(monkeypatch, responses) -> FakeMessages:
+    """An agent whose server client answers with these responses; returns them to inspect the calls."""
     fake = FakeMessages(responses)
-    client = type("C", (), {})()
-    client.beta = type("B", (), {})()
-    client.beta.messages = fake
-    monkeypatch.setattr(orchestrator, "client", client)
+    fake.clients = FakeClients(fake)
+    use_agent(fake.clients)
     return fake
+
+
+def use_store(store: InMemorySessionStore, limits: InMemoryLimits | None = None) -> None:
+    app.dependency_overrides[agent_api.get_store] = lambda: store
+    app.dependency_overrides[agent_api.get_limits] = lambda: limits or InMemoryLimits(10)
 
 
 @pytest.fixture
 def store():
-    s = InMemorySessionStore(ttl_s=3600, rate_per_minute=10)
-    app.dependency_overrides[agent_api.get_store] = lambda: s
+    s = InMemorySessionStore(ttl_s=3600)
+    use_store(s)
     yield s
     app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def tools(monkeypatch):
+def tools():
     calls = []
 
     def create_trip(**args):
@@ -96,8 +146,7 @@ def tools(monkeypatch):
         return {"trip_id": 9, "stops": [{"id": "17-1", "day": 1, "kind": "destination", "name": "Los Angeles",
                                          "lat": 34.05, "lon": -118.24, "arrival_date": "2026-10-18"}]}
 
-    monkeypatch.setitem(orchestrator.TOOL_FUNCTIONS, "create_trip", create_trip)
-    monkeypatch.setitem(orchestrator.TOOL_FUNCTIONS, "plan_stops", plan_stops)
+    TOOLS.update(create_trip=create_trip, plan_stops=plan_stops)
     return calls
 
 
@@ -159,8 +208,7 @@ def test_invalid_body_uses_the_same_error_shape(client, store):
 
 
 def test_rate_limit_per_session(client, monkeypatch):
-    s = InMemorySessionStore(ttl_s=3600, rate_per_minute=2)
-    app.dependency_overrides[agent_api.get_store] = lambda: s
+    use_store(InMemorySessionStore(ttl_s=3600), InMemoryLimits(rate_per_minute=2))
     try:
         install(monkeypatch, [final_response(), final_response(), final_response()])
         sid, other = new_session(client), new_session(client)
@@ -178,12 +226,12 @@ def test_rate_limit_per_session(client, monkeypatch):
 
 def test_rate_limit_window_slides():
     now = [0.0]
-    s = InMemorySessionStore(ttl_s=3600, rate_per_minute=2, clock=lambda: now[0])
-    assert s.allow("a")[0] and s.allow("a")[0]
-    allowed, retry = s.allow("a")
+    limits = InMemoryLimits(rate_per_minute=2, clock=lambda: now[0])
+    assert limits.allow_message("a")[0] and limits.allow_message("a")[0]
+    allowed, retry = limits.allow_message("a")
     assert not allowed and retry == 60
     now[0] = 60.5
-    assert s.allow("a")[0]
+    assert limits.allow_message("a")[0]
 
 
 @pytest.mark.parametrize("failure, status, code", [
@@ -280,7 +328,7 @@ def test_trim_history_cuts_at_user_turns_and_strips_thinking():
 
 def test_sessions_expire():
     now = [0.0]
-    s = InMemorySessionStore(ttl_s=10, rate_per_minute=10, clock=lambda: now[0])
+    s = InMemorySessionStore(ttl_s=10, clock=lambda: now[0])
     sid = s.create().id
     now[0] = 5
     assert s.get(sid) is not None
@@ -288,10 +336,25 @@ def test_sessions_expire():
     assert s.get(sid) is None
 
 
-def test_store_is_thread_safe_under_parallel_rate_checks():
-    s = InMemorySessionStore(ttl_s=3600, rate_per_minute=50)
+def test_a_rate_limit_of_zero_is_off_like_the_other_limits():
+    limits = InMemoryLimits(rate_per_minute=0)
+    assert all(limits.allow_message("a")[0] for _ in range(100))
+
+
+def test_limits_forget_sessions_with_nothing_in_the_window():
+    now = [0.0]
+    limits = InMemoryLimits(rate_per_minute=2, clock=lambda: now[0])
+    for sid in ("a", "b", "c"):
+        limits.allow_message(sid)
+    now[0] = 61
+    limits.allow_message("d")
+    assert set(limits._message_hits) == {"d"}  # noqa: SLF001 - expired sessions' windows don't pile up
+
+
+def test_limits_are_thread_safe_under_parallel_rate_checks():
+    limits = InMemoryLimits(rate_per_minute=50)
     results = []
-    threads = [threading.Thread(target=lambda: results.append(s.allow("a")[0])) for _ in range(200)]
+    threads = [threading.Thread(target=lambda: results.append(limits.allow_message("a")[0])) for _ in range(200)]
     for t in threads:
         t.start()
     for t in threads:

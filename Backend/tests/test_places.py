@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
-from app.api.v1.endpoints.agent import place_groups
+from app.agent.responses import place_groups
 from app.main import app
 from app.services.places import PlacesError, PlacesFinder, get_places_finder
 from app.services.places.cache import DatabaseStore, PlacesCache, cache_key
