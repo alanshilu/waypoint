@@ -6,20 +6,31 @@ reaches a campsite from an overnight stop, so this queries Overpass instead: the
 searched within CAMPING_RADIUS_KM / FOOD_RADIUS_KM of each point, with the tags that help choose.
 
 Everything a place says about itself (facts) comes from its OSM tags; nothing is inferred.
-Overpass is a free public service with a fair-use policy: all points go in one request, results
-are cached for CACHE_TTL_S, and a User-Agent names the app.
+Overpass is a free public service with a fair-use policy: all points go in one request, a second
+server is only asked when the first fails or is slow, results are cached for CACHE_TTL_S (in memory
+and in the places_cache table, so restarts keep them), and a User-Agent names the app.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import math
 import threading
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import datetime, timedelta, timezone
 from urllib import error, parse, request
 
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
+from app.core.db import SessionLocal
+from app.models.places_cache import PlacesCacheEntry
 from app.services import poi_service
+
+log = logging.getLogger(__name__)
 
 CAMPING_RADIUS_KM = 25.0  # about 15 miles: a short drive off the route at the end of the day
 FOOD_RADIUS_KM = 5.0
@@ -29,13 +40,17 @@ FOOD_WIDE_RADIUS_KM = 20.0
 PLACES_PER_GROUP = 6
 CACHE_TTL_S = 24 * 3600
 CACHE_MAX_ENTRIES = 500
-# Public Overpass servers can be slow under load (38-50 s measured on 2026-10-19), so the first server
-# gets up to TIMEOUT_S and later ones only what's left: in practice they cover fast failures (429, 504).
-# One find_places call takes at most OVERPASS_BUDGET_S in all, inside the agent tool's 150 s timeout.
-TIMEOUT_S = 85
-OVERPASS_BUDGET_S = 100
+# Public Overpass servers swing between answering in seconds and not at all: on 2026-10-21 one returned
+# 502 at once and the others timed out at 90 s on the smallest query, then minutes later the same search
+# took 19 s. So no single request waits long. The servers are asked in a hedged sequence: the next one
+# starts when one fails or hasn't answered within HEDGE_AFTER_S, and the first answer wins.
+# One find_places call takes at most OVERPASS_BUDGET_S in all; when Overpass can't answer in time,
+# food falls back to OpenRouteService (about a second).
+TIMEOUT_S = 30
+HEDGE_AFTER_S = 6
+OVERPASS_BUDGET_S = 50
 # The wider food round only starts with at least this much of the budget left
-WIDE_ROUND_MIN_S = 20
+WIDE_ROUND_MIN_S = 10
 # OpenRouteService's POI search, used for food when Overpass is down. Its 50 km2 area limit is measured
 # in Web Mercator, which inflates ground area by 1/cos(lat)^2, so the largest box is 7.07 km * cos(lat)
 # on a side: a half side of ORS_FOOD_HALF_SIDE_KM * cos(lat) (with a margin), about 1.6 miles at 37 N
@@ -166,6 +181,8 @@ def _place(element: dict, kind: str, lat: float, lon: float) -> dict:
 
 
 # ---- Cache: (kind, lat, lon rounded to ~1 km) -> (saved at, places) ----
+# In memory first, backed by the places_cache table so a restart or a Render sleep doesn't empty it.
+# The table is best effort: if the database fails, searches carry on with the memory cache alone.
 
 _cache: dict[tuple, tuple[float, dict]] = {}
 _cache_lock = threading.Lock()
@@ -183,14 +200,60 @@ def _cached(key: tuple) -> dict | None:
         return None
 
 
-def _store(key: tuple, result: dict) -> None:
+def _remember(key: tuple, result: dict, saved_at: float) -> None:
     with _cache_lock:
-        if len(_cache) >= CACHE_MAX_ENTRIES:
+        if key not in _cache and len(_cache) >= CACHE_MAX_ENTRIES:
             _cache.pop(min(_cache, key=lambda k: _cache[k][0]))
-        _cache[key] = (time.time(), result)
+        _cache[key] = (saved_at, result)
+
+
+def _db_key(key: tuple) -> str:
+    kind, lat, lon = key
+    return f"{kind}:{lat:.2f}:{lon:.2f}"
+
+
+def _db_load(keys: list[tuple]) -> dict[tuple, tuple[float, dict]]:
+    """Saved results younger than CACHE_TTL_S: key -> (saved at, result). Empty if the database fails."""
+    by_db_key = {_db_key(k): k for k in keys}
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=CACHE_TTL_S)
+    try:
+        with SessionLocal() as db:
+            rows = (db.query(PlacesCacheEntry)
+                    .filter(PlacesCacheEntry.key.in_(by_db_key), PlacesCacheEntry.saved_at > cutoff)
+                    .all())
+    except SQLAlchemyError as e:
+        log.warning("Places cache: couldn't read the database (%s); using the memory cache only", e)
+        return {}
+    return {by_db_key[r.key]: (r.saved_at.timestamp(), r.result) for r in rows}
+
+
+def _db_save(results: dict[tuple, dict]) -> None:
+    """Upserts results and drops expired rows. A database failure is logged, never raised."""
+    now = datetime.now(timezone.utc)
+    rows = [{"key": _db_key(k), "result": r, "saved_at": now} for k, r in results.items()]
+    stmt = insert(PlacesCacheEntry).values(rows)
+    stmt = stmt.on_conflict_do_update(index_elements=[PlacesCacheEntry.key],
+                                      set_={"result": stmt.excluded.result, "saved_at": stmt.excluded.saved_at})
+    try:
+        with SessionLocal() as db:
+            db.execute(stmt)
+            db.query(PlacesCacheEntry).filter(
+                PlacesCacheEntry.saved_at < now - timedelta(seconds=CACHE_TTL_S)).delete()
+            db.commit()
+    except SQLAlchemyError as e:
+        log.warning("Places cache: couldn't save to the database (%s); kept in memory only", e)
+
+
+def _store(results: dict[tuple, dict]) -> None:
+    now = time.time()
+    for key, result in results.items():
+        _remember(key, result, now)
+    if results:
+        _db_save(results)
 
 
 def clear_cache() -> None:
+    """Clears the memory cache (the table expires rows by age)."""
     with _cache_lock:
         _cache.clear()
 
@@ -231,18 +294,42 @@ def _overpass_once(url: str, query: str, timeout: float) -> list[dict]:
 
 
 def _overpass(query: str, budget_s: float = OVERPASS_BUDGET_S) -> list[dict]:
-    """The first answer from the configured Overpass servers, within budget_s. Raises PlacesError."""
+    """
+    The first answer from the configured Overpass servers, within budget_s. Raises PlacesError.
+
+    Hedged: the first server is asked, and the next one too as soon as a request fails or HEDGE_AFTER_S
+    passes without an answer; whichever answers first wins. A failing or stalled server costs seconds
+    instead of the whole budget, and a healthy first server is the only one asked.
+    """
+    urls = list(settings.overpass_url_list)
+    if not urls:
+        raise PlacesError("No OpenStreetMap (Overpass) server is configured")
     deadline = time.monotonic() + budget_s
-    last: PlacesError | None = None
-    for url in settings.overpass_url_list:
-        left = deadline - time.monotonic()
-        if left < 5:
-            break
-        try:
-            return _overpass_once(url, query, min(TIMEOUT_S, left))
-        except PlacesError as e:
-            last = e
-    raise last or PlacesError("No OpenStreetMap (Overpass) server is configured")
+    errors: list[PlacesError] = []
+    pending: set = set()
+    pool = ThreadPoolExecutor(max_workers=len(urls), thread_name_prefix="overpass")
+    try:
+        while True:
+            left = deadline - time.monotonic()
+            if urls and left >= 5:
+                pending.add(pool.submit(_overpass_once, urls.pop(0), query, min(TIMEOUT_S, left)))
+            if not pending or left <= 0:
+                break
+            done, pending = wait(pending, timeout=min(HEDGE_AFTER_S, left) if urls else left,
+                                 return_when=FIRST_COMPLETED)
+            for future in done:
+                try:
+                    return future.result()
+                except PlacesError as e:
+                    errors.append(e)
+    finally:
+        # a request still running ends on its own timeout; nothing waits for it
+        pool.shutdown(wait=False, cancel_futures=True)
+    if pending or not errors:
+        errors.append(PlacesError(f"OpenStreetMap (Overpass) did not answer within {budget_s:.0f} s",
+                                  timed_out=True))
+    # a timeout says more about why the search was slow than a quick 502 from another server
+    raise next((e for e in errors if e.timed_out), errors[-1])
 
 
 def ors_half_side_km(lat: float) -> float:
@@ -332,13 +419,18 @@ def find_places(points: list[dict]) -> list[dict]:
         {"near", "kind", "lat", "lon", "radius_mi", "source", "places": [...], "note"?}
     each group's places ranked best first, at most PLACES_PER_GROUP.
 
-    One Overpass request covers every search not already cached; food searches that find nothing are
+    One Overpass request covers every search not already cached (in memory or in the places_cache
+    table); food searches that find nothing are
     repeated once out to FOOD_WIDE_RADIUS_KM, all within OVERPASS_BUDGET_S. If Overpass is down, food
     falls back to OpenRouteService (within about 1.6 miles) and campsites come back empty with a note.
     """
     started = time.monotonic()
     searches = list(dict.fromkeys((kind, p["lat"], p["lon"]) for p in points for kind in dict.fromkeys(p["kinds"])))
     missing = [s for s in searches if _cached(_cache_key(*s)) is None]
+    if missing:
+        for key, (saved_at, result) in _db_load([_cache_key(*s) for s in missing]).items():
+            _remember(key, result, saved_at)
+        missing = [s for s in missing if _cached(_cache_key(*s)) is None]
     # this call's uncached results: key -> {"places", "source", "radius_km", "note"?}
     fresh: dict[tuple, dict] = {}
 
@@ -365,10 +457,8 @@ def find_places(points: list[dict]) -> list[dict]:
                 fresh[_cache_key(kind, lat, lon)] = {"places": _ranked(candidates, kind, lat, lon, radius),
                                                      "source": "openstreetmap", "radius_km": radius}
             complete = _widen_empty_food([s for s in missing if s[0] == "food"], fresh, started)
-            for kind, lat, lon in missing:
-                key = _cache_key(kind, lat, lon)
-                if kind == "camping" or complete:  # only complete answers are cached
-                    _store(key, fresh[key])
+            # only complete answers are cached
+            _store({_cache_key(*s): fresh[_cache_key(*s)] for s in missing if s[0] == "camping" or complete})
 
     groups = []
     for p in points:

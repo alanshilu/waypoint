@@ -36,11 +36,24 @@ ELEMENTS = [
 ]
 
 
+REAL_DB_LOAD, REAL_DB_SAVE = ps._db_load, ps._db_save
+
+
 @pytest.fixture(autouse=True)
 def fresh_cache():
     ps.clear_cache()
     yield
     ps.clear_cache()
+
+
+@pytest.fixture(autouse=True)
+def saved(monkeypatch):
+    """The places_cache table, as a dict: nothing is saved yet, and no test reaches a real database."""
+    table: dict[tuple, tuple[float, dict]] = {}
+    monkeypatch.setattr(ps, "_db_load", lambda keys: {k: table[k] for k in keys if k in table})
+    monkeypatch.setattr(ps, "_db_save", lambda results: table.update(
+        {k: (ps.time.time(), r) for k, r in results.items()}))
+    return table
 
 
 @pytest.fixture
@@ -82,7 +95,7 @@ def test_facts_come_only_from_tags(overpass):
     assert "_score" not in pizza
 
 
-def test_a_better_described_campsite_can_outrank_a_slightly_closer_one(overpass, monkeypatch):
+def test_a_better_described_campsite_can_outrank_a_slightly_closer_one(overpass, monkeypatch, saved):
     # Bare Camp is 0.7 mi away with nothing known; Lodge Camp is 3.5 mi with toilets, showers and a
     # reservation policy, worth 2.25 mi: 3.45 - 2.25 = 1.2 still ranks behind 0.7
     camping = by(ps.find_places([STOP]), "1-1", "camping")["places"]
@@ -90,6 +103,7 @@ def test_a_better_described_campsite_can_outrank_a_slightly_closer_one(overpass,
     # moved to 1.5 mi, the better-described site wins: 1.5 - 2.25 < 0.7
     closer = [dict(e, lat=36.8635) if e["id"] == 1 else e for e in ELEMENTS]
     ps.clear_cache()
+    saved.clear()
     monkeypatch.setattr(ps, "_overpass", lambda query, budget_s=None: closer)
     assert by(ps.find_places([STOP]), "1-1", "camping")["places"][0]["name"] == "Lodge Camp"
 
@@ -225,3 +239,107 @@ def test_find_places_points_must_be_grounded():
     assert poi_coords_grounded(near).passed
     result = poi_coords_grounded(far)
     assert not result.passed and "find_places at 45.0,-90.0" in result.evidence[0]
+
+
+# ---- Hedged Overpass requests ----
+
+@pytest.fixture
+def servers(monkeypatch):
+    """Three fake Overpass servers. Set each one's behaviour: ("ok", delay), ("http", code) or ("hang",)."""
+    behaviour: dict[str, tuple] = {}
+    asked: list[str] = []
+
+    def once(url, query, timeout):
+        asked.append(url)
+        how = behaviour[url]
+        if how[0] == "http":
+            raise ps.PlacesError(f"HTTP {how[1]}", timed_out=how[1] == 504)
+        delay = how[1] if how[0] == "ok" else timeout
+        ps.time.sleep(min(delay, timeout))
+        if how[0] == "ok" and delay <= timeout:
+            return [{"from": url}]
+        raise ps.PlacesError(f"{url} did not answer within {timeout:.0f} s", timed_out=True)
+
+    monkeypatch.setattr(ps, "_overpass_once", once)
+    monkeypatch.setattr(ps.settings, "overpass_urls", "a,b,c")
+    monkeypatch.setattr(ps, "HEDGE_AFTER_S", 0.2)
+    return SimpleNamespace(behaviour=behaviour, asked=asked)
+
+
+def timed(fn, *args):
+    started = ps.time.monotonic()
+    try:
+        return fn(*args), ps.time.monotonic() - started
+    except ps.PlacesError as e:
+        return e, ps.time.monotonic() - started
+
+
+def test_a_healthy_first_server_is_the_only_one_asked(servers):
+    servers.behaviour.update(a=("ok", 0.05), b=("ok", 0.0), c=("ok", 0.0))
+    assert ps._overpass("q", 10) == [{"from": "a"}]
+    assert servers.asked == ["a"]
+
+
+def test_a_failing_server_hands_over_at_once(servers):
+    servers.behaviour.update(a=("http", 502), b=("ok", 0.0), c=("ok", 0.0))
+    result, took = timed(ps._overpass, "q", 10)
+    assert result == [{"from": "b"}] and servers.asked == ["a", "b"]
+    assert took < ps.HEDGE_AFTER_S  # didn't wait for the hedge timer
+
+
+def test_a_stalled_server_is_overtaken_without_waiting_for_it(servers):
+    servers.behaviour.update(a=("hang",), b=("ok", 0.05), c=("ok", 0.0))
+    result, took = timed(ps._overpass, "q", 10)
+    assert result == [{"from": "b"}]
+    assert took < 1  # about HEDGE_AFTER_S, not server a's timeout
+
+
+def test_the_budget_bounds_the_whole_search(servers):
+    servers.behaviour.update(a=("hang",), b=("hang",), c=("hang",))
+    error, took = timed(ps._overpass, "q", 1.0)
+    assert isinstance(error, ps.PlacesError) and error.timed_out
+    assert took < 1.5
+
+
+def test_every_server_failing_reports_the_timeout_over_a_502(servers):
+    servers.behaviour.update(a=("http", 502), b=("http", 504), c=("http", 429))
+    error, took = timed(ps._overpass, "q", 10)
+    assert isinstance(error, ps.PlacesError) and str(error) == "HTTP 504" and error.timed_out
+    assert servers.asked == ["a", "b", "c"] and took < 1
+
+
+# ---- The places_cache table ----
+
+def test_saved_results_answer_without_overpass(overpass, saved):
+    ps.find_places([STOP])
+    assert len(overpass) == 1 and len(saved) == 2  # camping and food, both saved
+    ps.clear_cache()  # a restart: the memory cache is gone, the table isn't
+    groups = ps.find_places([STOP])
+    assert len(overpass) == 1
+    assert [p["name"] for p in by(groups, "1-1", "camping")["places"]] == ["Bare Camp", "Lodge Camp"]
+
+
+def test_failed_searches_are_not_saved(monkeypatch, saved):
+    def down(query, budget_s=None):
+        raise ps.PlacesError("OpenStreetMap (Overpass) is busy: HTTP 429")
+
+    monkeypatch.setattr(ps, "_overpass", down)
+    monkeypatch.setattr(ps, "_ors_food", lambda lat, lon: [])
+    ps.find_places([STOP])
+    assert saved == {}
+
+
+def test_an_unreachable_database_leaves_the_memory_cache_working(monkeypatch, caplog):
+    from sqlalchemy.exc import OperationalError
+
+    def unreachable():
+        raise OperationalError("connect", {}, Exception("connection timed out"))
+
+    monkeypatch.setattr(ps, "SessionLocal", unreachable)
+    monkeypatch.setattr(ps, "_db_load", REAL_DB_LOAD)
+    monkeypatch.setattr(ps, "_db_save", REAL_DB_SAVE)
+    monkeypatch.setattr(ps, "_overpass", lambda q, budget_s=None: ELEMENTS)
+    groups = ps.find_places([STOP])
+    assert by(groups, "1-1", "food")["places"][0]["name"] == "Valley Pizzeria"
+    assert ps._cached(ps._cache_key("food", STOP["lat"], STOP["lon"])) is not None
+    assert "couldn't read the database" in caplog.text and "couldn't save to the database" in caplog.text

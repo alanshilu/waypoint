@@ -335,8 +335,9 @@ docs/screenshots/          the images in this README
 - **The per-IP limit trusts the proxy.** The visitor's address comes from the `X-Forwarded-For` header set by the nginx container. Don't publish the backend's port directly, or a client could set that header itself.
 - **Stop planning assumes a uniform pace** along the route and uses the origin's time zone for the whole trip.
 - **The evals are one sample** and have documented blind spots (place names are found by heuristic; any tool number can ground an equal number in the reply).
-- **Campsite and food searches can be slow.** They use the free public Overpass service, which took 38–60 s per search on 2026-10-19.
-  - Results are cached for a day, but only in memory, so a restart or a Render sleep clears them.
+- **Campsite and food searches depend on the free public Overpass service**, which swings between answering in seconds and not answering at all.
+  - A second server is asked as soon as the first fails or is slow, and a search gives up after about 30 s (50 s at most, including a wider food search).
+  - Results are cached for a day in the database (`places_cache`), so restarts and Render sleeps keep them; a repeated route is answered instantly.
   - If Overpass fails, food falls back to OpenRouteService within about 1.6 miles, and campsites come back empty with a note.
 - **Place facts are only as complete as OpenStreetMap.** Many campsites list no amenities, and opening hours are shown as tagged, not checked against your arrival time.
 - **Lunch time isn't added to the schedule.** Lunch stops are where each day's driving reaches noon; the break doesn't push back arrival times.
