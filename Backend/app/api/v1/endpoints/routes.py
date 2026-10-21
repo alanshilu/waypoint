@@ -1,18 +1,16 @@
+"""POST /routes/generate and /routes/select: HTTP over app/services/route_generation.py."""
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from geoalchemy2.shape import to_shape # ADDED: to convert PostGIS binary to Python
+
 from app.api.deps import internal_only
-from app.core.db import get_db
-from app.models.trip import Trip
-from app.services.routing_service import RoutingError, get_route_options
-from app.services.scoring_service import score_route_options
-from app.services.db_route_service import save_routes_to_db
-from app.models.route import Route
 from app.api.v1.serializers import add_duration_ratios, route_to_dict
+from app.core.db import get_db
+from app.services.errors import NotFound
+from app.services.route_generation import RouteGenerator, get_route_generator, select_route as select
+from app.services.routing_service import RoutingError
 
 router = APIRouter()
-
-ROUTE_TYPES = ("fastest", "backroads")
 
 
 @router.post("/generate/{trip_id}", dependencies=[Depends(internal_only)])
@@ -20,72 +18,28 @@ def generate_and_save_routes(
     trip_id: int,
     reuse_existing: bool = Query(False, description="Return the trip's existing routes instead of generating new ones"),
     db: Session = Depends(get_db),
+    generator: RouteGenerator = Depends(get_route_generator),
 ):
-    # 1. Fetch the trip directly from the database
-    trip = db.query(Trip).filter(Trip.id == trip_id).first()
-
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
-
-    if reuse_existing:
-        # newest route of each type; reuse only when the trip has both, and both have directions
-        # (routes saved before directions were kept are generated again, once)
-        latest: dict[str, Route] = {}
-        for route in db.query(Route).filter(Route.trip_id == trip_id).order_by(Route.id.desc()):
-            latest.setdefault(route.route_type, route)
-        if all(t in latest and latest[t].directions is not None for t in ROUTE_TYPES):
-            return {
-                "status": "success",
-                "trip_id": trip_id,
-                "reused": True,
-                "routes": add_duration_ratios([route_to_dict(latest[t]) for t in ROUTE_TYPES]),
-            }
-
-    # 2. Extract Lat/Lon from the PostGIS Point binary
-    origin_shape = to_shape(trip.origin_point)           # Converts to Shapely Point
-    destination_shape = to_shape(trip.destination_point) # Converts to Shapely Point
-
-    start_lon, start_lat = origin_shape.x, origin_shape.y
-    end_lon, end_lat = destination_shape.x, destination_shape.y
-
-    # 3. Pass the extracted coordinates to your services
-    # The route service failing is an upstream problem, not ours: 504 when it timed out, else 502
     try:
-        raw_routes = get_route_options(start_lon, start_lat, end_lon, end_lat)
+        result = generator.generate(db, trip_id, reuse_existing)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except RoutingError as e:
+        # The route service failing is an upstream problem, not ours: 504 when it timed out, else 502
         raise HTTPException(status_code=504 if e.timed_out else 502, detail=str(e))
-    scored_routes = score_route_options(raw_routes)
-    db_routes = save_routes_to_db(db, trip_id, scored_routes)
-
     return {
         "status": "success",
         "trip_id": trip_id,
-        "reused": False,
-        "routes": add_duration_ratios([route_to_dict(r) for r in db_routes])
+        "reused": result.reused,
+        "routes": add_duration_ratios([route_to_dict(r) for r in result.routes]),
     }
+
+
 @router.post("/select/{route_id}", dependencies=[Depends(internal_only)])
 def select_route(route_id: int, db: Session = Depends(get_db)):
-    """
-    Marks a specific route as selected and links it to the parent trip.
-    """
-    # 1. Find the route the user clicked
-    selected_route = db.query(Route).filter(Route.id == route_id).first()
-
-    if not selected_route:
-        raise HTTPException(status_code=404, detail="Route not found")
-
-    # 2. Find the parent trip this route belongs to
-    trip = db.query(Trip).filter(Trip.id == selected_route.trip_id).first()
-
-    # 3. Update the database state: exactly one selected route per trip
-    db.query(Route).filter(Route.trip_id == trip.id, Route.id != selected_route.id).update(
-        {Route.is_selected: False}, synchronize_session=False
-    )
-    selected_route.is_selected = True
-    trip.selected_route_id = selected_route.id
-
-    # (Optional: Delete the unselected candidate routes here to save DB space)
-
-    db.commit()
-
+    """Marks a route as selected, the only selected one of its trip."""
+    try:
+        trip = select(db, route_id)
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return {"status": "success", "message": f"Route {route_id} selected for Trip {trip.id}"}

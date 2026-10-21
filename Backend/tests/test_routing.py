@@ -10,7 +10,7 @@ from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 
 from app.agent.tools import generate_route as generate_route_tool
-from app.api.v1.endpoints import routes as routes_endpoint
+from app.services.route_generation import RouteGenerator, get_route_generator
 from app.core.db import get_db
 from app.main import app
 from app.services import routing_service
@@ -62,12 +62,16 @@ def client_with_trip():
 
 
 @pytest.mark.parametrize("timed_out, status", [(True, 504), (False, 502)])
-def test_endpoint_reports_ors_failure_as_upstream_error(monkeypatch, client_with_trip, timed_out, status):
-    def failing_options(*args):
-        raise RoutingError("OpenRouteService did not answer within 90 s", timed_out=timed_out)
+def test_endpoint_reports_ors_failure_as_upstream_error(client_with_trip, timed_out, status):
+    class FailingRouter:
+        def get_route_options(self, *args):
+            raise RoutingError("OpenRouteService did not answer within 90 s", timed_out=timed_out)
 
-    monkeypatch.setattr(routes_endpoint, "get_route_options", failing_options)
-    r = client_with_trip.post("/routes/generate/1")
+    app.dependency_overrides[get_route_generator] = lambda: RouteGenerator(FailingRouter())
+    try:
+        r = client_with_trip.post("/routes/generate/1")
+    finally:
+        app.dependency_overrides.pop(get_route_generator, None)
     assert r.status_code == status
     assert r.json()["detail"] == "OpenRouteService did not answer within 90 s"
 

@@ -90,16 +90,22 @@ def generate_with(monkeypatch, saved_directions):
     from fastapi.testclient import TestClient
     from shapely.geometry import Point
 
-    from app.api.v1.endpoints import routes as routes_endpoint
     from app.core.db import get_db
     from app.main import app
     from app.models.route import Route
     from app.models.trip import Trip
+    from app.services.route_generation import RouteGenerator, get_route_generator
 
     trip = SimpleNamespace(origin_point=from_shape(Point(-122.4, 37.8), srid=4326),
                            destination_point=from_shape(Point(-118.2, 34.1), srid=4326))
-    saved = [SimpleNamespace(id=i, route_type=t, duration_seconds=100 * i, directions=saved_directions)
-             for i, t in ((2, "backroads"), (1, "fastest"))]
+
+    def route(id_, route_type, duration, directions):
+        return SimpleNamespace(id=id_, trip_id=1, route_type=route_type, distance_miles=10.0, duration_seconds=duration,
+                               ascent_m=0, descent_m=0, scenic_score=1.0, is_selected=False,
+                               geometry=from_shape(LineString([c[:2] for c in COORDS])), elevation_profile=None,
+                               directions=directions, created_at=None)
+
+    saved = [route(2, "backroads", 200, saved_directions), route(1, "fastest", 100, saved_directions)]
 
     def query(model):
         if model is Trip:
@@ -108,17 +114,22 @@ def generate_with(monkeypatch, saved_directions):
         return SimpleNamespace(filter=lambda *a: SimpleNamespace(order_by=lambda *a: saved))
 
     generated = []
-    monkeypatch.setattr(routes_endpoint, "get_route_options", lambda *a: generated.append(a) or {})
-    monkeypatch.setattr(routes_endpoint, "save_routes_to_db", lambda db, trip_id, routes: [
-        SimpleNamespace(id=3, route_type="fastest", duration_seconds=100, directions=[]),
-        SimpleNamespace(id=4, route_type="backroads", duration_seconds=200, directions=[])])
-    monkeypatch.setattr(routes_endpoint, "route_to_dict", lambda r: {"id": r.id, "route_type": r.route_type,
-                                                                     "duration_seconds": r.duration_seconds})
+
+    class Router:
+        def get_route_options(self, *coords):
+            generated.append(coords)
+            return {}
+
+    def save(db, trip_id, routes):
+        return [route(3, "fastest", 100, []), route(4, "backroads", 200, [])]
+
     app.dependency_overrides[get_db] = lambda: SimpleNamespace(query=query)
+    app.dependency_overrides[get_route_generator] = lambda: RouteGenerator(Router(), save=save)
     try:
         body = TestClient(app).post("/routes/generate/1?reuse_existing=true").json()
     finally:
         app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_route_generator, None)
     return body, generated
 
 
