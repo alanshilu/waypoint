@@ -15,6 +15,23 @@ export interface ElevationPoint {
   m: number;
 }
 
+/**
+ * One turn-by-turn step from OpenRouteService. type: 0 left, 1 right, 2 sharp left, 3 sharp right,
+ * 4 slight left, 5 slight right, 6 straight, 7 enter roundabout, 8 exit roundabout, 9 U-turn,
+ * 10 arrive, 11 depart, 12 keep left, 13 keep right.
+ */
+export interface DirectionStep {
+  instruction: string;
+  /** Null when ORS has no name for the road, common on motorways */
+  name: string | null;
+  type: number;
+  distance_miles: number;
+  duration_seconds: number;
+  /** [lon, lat] where the step starts and ends, from the full-resolution route */
+  start: [number, number];
+  end: [number, number];
+}
+
 export interface Route {
   id: number;
   route_type: RouteType;
@@ -30,6 +47,8 @@ export interface Route {
   geometry: LineString;
   /** Absent for routes saved before the backend kept elevation. */
   elevation_profile?: ElevationPoint[];
+  /** Turn-by-turn steps; null for routes saved before the backend kept them. */
+  directions?: DirectionStep[] | null;
 }
 
 export interface ForecastDay {
@@ -263,6 +282,8 @@ export interface RawRoute {
   geometry: LineString;
   /** Null for routes saved before the backend kept elevation. */
   elevation_profile: ElevationPoint[] | null;
+  /** Null for routes saved before the backend kept directions; absent from older backends. */
+  directions?: DirectionStep[] | null;
   /** ISO 8601 with a UTC offset */
   created_at: string;
 }

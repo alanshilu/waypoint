@@ -1,6 +1,7 @@
 import tripFixtureJson from "./fixtures/trip.sf-la.json";
 import poisFixtureJson from "./fixtures/pois.json";
 import placesFixtureJson from "./fixtures/places.json";
+import directionsFixtureJson from "./fixtures/directions.sf-la.json";
 import { haversineMiles } from "./geo";
 import { getOwnKey } from "./ownKey";
 import { markAwake, markGaveUp, markWaking, mayBeAsleep } from "./serverStatus";
@@ -8,6 +9,7 @@ import type {
   AgentApiResponse,
   AgentStreamEvent,
   CacheStatus,
+  DirectionStep,
   ForecastDay,
   Place,
   PlaceGroup,
@@ -31,7 +33,12 @@ export const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000
 /** Matches the backend's PUBLIC_DEMO: route writes are agent-only, so a route picked on the map stays in the browser. */
 export const PUBLIC_DEMO = import.meta.env.VITE_PUBLIC_DEMO === "true";
 
-const tripFixture = tripFixtureJson as unknown as Trip;
+// The mock routes are hand-drawn; their directions are real ORS steps for the same trip
+const mockDirections = directionsFixtureJson as unknown as Record<RouteType, DirectionStep[]>;
+const tripFixture: Trip = {
+  ...(tripFixtureJson as unknown as Trip),
+  routes: (tripFixtureJson as unknown as Trip).routes.map((r) => ({ ...r, directions: mockDirections[r.route_type] })),
+};
 const poisFixture = poisFixtureJson as unknown as {
   sets: { center: { lat: number; lon: number }; pois: Poi[] }[];
 };
@@ -160,6 +167,7 @@ function adaptRoute(raw: RawRoute): Route {
     duration_vs_fastest: raw.duration_vs_fastest ?? null,
     geometry: raw.geometry,
     elevation_profile: raw.elevation_profile ?? undefined,
+    directions: raw.directions ?? null,
   };
 }
 

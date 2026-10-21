@@ -393,6 +393,80 @@ button:disabled {
   display: block;
 }
 
+/* Drag to pan, wheel or pinch to zoom: the page itself mustn't scroll or zoom under the map */
+.map-svg {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.map-svg.dragging,
+.map-svg.dragging * {
+  cursor: grabbing;
+}
+
+.zoom-controls {
+  position: absolute;
+  right: var(--gap);
+  bottom: var(--gap);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--espresso);
+  background: var(--parchment-light);
+}
+
+.zoom-controls button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-data);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.zoom-controls button + button {
+  border-top: 1px solid var(--hairline);
+}
+
+.zoom-controls button:hover:not(:disabled) {
+  background: var(--parchment);
+}
+
+.zoom-controls button:disabled {
+  opacity: 0.35;
+}
+
+/* The directions step on the map: its stretch over the route, and a disc with the maneuver */
+.map-step-line {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 6;
+  stroke-opacity: 0.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.map-step.active .map-step-line {
+  stroke-opacity: 0.85;
+}
+
+.map-step circle {
+  fill: var(--parchment-light);
+  stroke: var(--espresso);
+  stroke-width: 1.5;
+}
+
+.map-step.active circle {
+  fill: var(--gold);
+  stroke-width: 2;
+}
+
+.map-step {
+  pointer-events: none;
+}
+
 .map-graticule {
   fill: none;
   stroke: var(--espresso);
@@ -770,10 +844,161 @@ button:disabled {
   color: var(--ink-muted);
 }
 
+.map-header-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .segmented {
   display: inline-flex;
-  margin-top: 10px;
   border: 1px solid var(--espresso);
+}
+
+.directions-toggle {
+  padding: 4px 10px;
+  border: 1px solid var(--espresso);
+  background: var(--parchment-light);
+  font-size: 13px;
+}
+
+.directions-toggle[aria-pressed="true"] {
+  background: var(--espresso);
+  color: var(--parchment-light);
+}
+
+/* ---- Directions --------------------------------------------------------- */
+
+.directions-panel {
+  position: absolute;
+  left: var(--gap);
+  bottom: var(--gap);
+  width: 300px;
+  max-height: 62%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  background: var(--parchment-light);
+}
+
+.directions-panel header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.directions-panel h2 {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 15px;
+}
+
+.directions-route {
+  margin-left: 4px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.directions-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.directions-summary,
+.directions-empty {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.directions-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.directions-nav button {
+  padding: 3px 9px;
+  border: 1px solid var(--espresso);
+  background: var(--parchment-light);
+  font-size: 12px;
+}
+
+.directions-nav button:disabled {
+  opacity: 0.35;
+}
+
+.directions-list {
+  margin: 0;
+  padding: 2px 0 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.directions-list button {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+
+.directions-list button:hover {
+  background: var(--parchment);
+}
+
+.directions-list li.active button {
+  border-left-color: var(--gold);
+  background: var(--parchment);
+  font-weight: 600;
+}
+
+.direction-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.direction-at {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.direction-distance {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.maneuver-icon {
+  fill: none;
+  stroke: var(--espresso);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+.maneuver-icon circle:not(.open) {
+  fill: var(--espresso);
 }
 
 .segmented button {

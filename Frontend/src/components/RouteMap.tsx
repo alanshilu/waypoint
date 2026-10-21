@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { geoAlbers, geoGraticule, geoPath } from "d3-geo";
 import type { GeoPermissibleObjects } from "d3-geo";
@@ -19,6 +19,9 @@ import { highwaysAlong, linesOf, useHighways } from "../highways";
 import type { Highway } from "../highways";
 import CityPopover from "./CityPopover";
 import PlacesPanel from "./PlacesPanel";
+import DirectionsPanel, { ManeuverIcon } from "./DirectionsPanel";
+import { ARRIVE, buildDirections } from "../directions";
+import { useMapZoom, ZOOM_BUTTON_FACTOR } from "../useMapZoom";
 
 const MAX_ROUTE_POINTS = 500;
 // Footprint of the RouteComparison overlay, including its margins (and its "via I-5" line).
@@ -67,6 +70,10 @@ const ROUTE_66_LABEL_AT: [number, number][] = [
   [-117.0173, 34.8958], // Barstow
 ];
 const ROUTE_66_ID = "route-66";
+// Zooming to a directions step shows about this many miles each side of the maneuver
+const STEP_VIEW_MILES = 0.8;
+// From this far in, routes are drawn from their full served line rather than the 500-point version
+const FULL_DETAIL_K = 3;
 
 interface Shield {
   highway: Highway;
@@ -206,10 +213,31 @@ export default function RouteMap() {
   const view: FitMode = mode === "stops" && stops ? "stops" : mode !== "usa" && hasRoutes ? "route" : "usa";
   const zoomed = view !== "usa";
 
-  const projection = useMemo(() => {
+  // Directions: for the selected route, or the fastest until one is picked
+  const [directionsOpen, setDirectionsOpen] = useState(false);
+  const [activeStep, setActiveStep] = useState<number | null>(null);
+  const [hoveredStep, setHoveredStep] = useState<number | null>(null);
+  const directionsRoute =
+    routes.find((r) => r.route.id === selectedRouteId)?.route ??
+    routes.find((r) => r.route.route_type === "fastest")?.route ??
+    null;
+  const directions = useMemo(
+    () => (directionsRoute ? buildDirections(directionsRoute, highways) : null),
+    [directionsRoute, highways],
+  );
+  const showDirections = directionsOpen && directionsRoute !== null;
+  // a new route (another trip, or the other route selected) starts the list from the top
+  useEffect(() => {
+    setActiveStep(null);
+    setHoveredStep(null);
+  }, [directionsRoute]);
+  // the left-hand list in view: directions while open, else the places list, else the stops list
+  const leftPanelWidth = showDirections || hasPlaces ? PLACES_LIST_WIDTH : stops ? STOPS_LIST_WIDTH : 0;
+
+  const fitted = useMemo(() => {
     if (width === 0 || height === 0) return null;
     const side = zoomed ? 70 : 24;
-    const left = hasPlaces ? PLACES_LIST_WIDTH : stops ? STOPS_LIST_WIDTH : side;
+    const left = leftPanelWidth || side;
     const bottom = zoomed ? 50 : 24;
     let target: GeoPermissibleObjects = lower48;
     if (view === "route") {
@@ -242,7 +270,37 @@ export default function RouteMap() {
     const below = fit(CARDS_HEIGHT, side);
     const beside = fit(HEADER_HEIGHT, CARDS_WIDTH);
     return below.scale() >= beside.scale() ? below : beside;
-  }, [width, height, view, hasRoutes, routes, stops, picks, hasPlaces]);
+  }, [width, height, view, hasRoutes, routes, stops, picks, leftPanelWidth, zoomed]);
+
+  // Zoom and pan on top of the fitted view
+  const svgRef = useRef<SVGSVGElement>(null);
+  const zoom = useMapZoom(svgRef, fitted, { width, height });
+  const projection = zoom.projection;
+  // Zoomed in from the fit: draw routes at full detail and give US routes shields too
+  const closeUp = zoomed || zoom.k > 1.5;
+
+  const setView = (next: FitMode) => {
+    setMode(next);
+    zoom.reset();
+  };
+
+  /** Zooms to a step's maneuver (its start; the arrival's end), about a mile around it. */
+  const showStep = (index: number) => {
+    const d = directions?.[index];
+    if (!d) return;
+    setActiveStep(index);
+    const [lon, lat] = d.step.type === ARRIVE ? d.step.end : d.step.start;
+    const dLat = STEP_VIEW_MILES / 69.17;
+    const dLon = dLat / Math.cos((lat * Math.PI) / 180);
+    zoom.zoomTo(
+      [
+        [lon - dLon, lat - dLat],
+        [lon + dLon, lat + dLat],
+      ],
+      // below the route cards, right of the directions list
+      { x0: leftPanelWidth + 30, y0: CARDS_HEIGHT, x1: width - 30, y1: height - 30 },
+    );
+  };
 
   const base = useMemo(() => {
     if (!projection) return null;
@@ -302,7 +360,7 @@ export default function RouteMap() {
   // spaced out greedily. Zoomed out, only Interstates get one.
   const shields = useMemo(() => {
     if (!projection || !highways) return [];
-    const spacing = zoomed ? SHIELD_SPACING.zoomed : SHIELD_SPACING.usa;
+    const spacing = closeUp ? SHIELD_SPACING.zoomed : SHIELD_SPACING.usa;
     const placed: Shield[] = [];
     // trip endpoints keep their labels clear
     const blocked = (trip ? [trip.origin, trip.destination] : [])
@@ -311,7 +369,7 @@ export default function RouteMap() {
     // nor under the overlays: the title and zoom toggle, the route cards, the places or stops list
     const covered: [number, number, number, number][] = [[0, 0, HEADER_WIDTH, HEADER_HEIGHT]];
     if (hasRoutes) covered.push([width - CARDS_WIDTH, 0, width, CARDS_HEIGHT]);
-    if (hasPlaces || stops) covered.push([0, 0, hasPlaces ? PLACES_LIST_WIDTH : STOPS_LIST_WIDTH, height]);
+    if (leftPanelWidth) covered.push([0, 0, leftPanelWidth, height]);
     const onScreen = (x: number, y: number) =>
       x > SHIELD_MARGIN &&
       y > SHIELD_MARGIN &&
@@ -329,7 +387,7 @@ export default function RouteMap() {
       }
     }
     const rest = highways
-      .filter((h) => !onRouteIds.has(h.id) && (zoomed || h.kind === "interstate"))
+      .filter((h) => !onRouteIds.has(h.id) && (closeUp || h.kind === "interstate"))
       // Interstates, then shorter (more important) numbers: I-5 and I-80 before I-805
       .sort(
         (a, b) =>
@@ -348,7 +406,7 @@ export default function RouteMap() {
       }
     }
     return placed;
-  }, [projection, highways, onRoute, onRouteIds, zoomed, width, height, trip, hasRoutes, hasPlaces, stops]);
+  }, [projection, highways, onRoute, onRouteIds, closeUp, width, height, trip, hasRoutes, leftPanelWidth]);
 
   const route66Label = useMemo(() => {
     if (!projection) return null;
@@ -363,6 +421,8 @@ export default function RouteMap() {
     <div className="route-map" ref={ref}>
       {projection && path && base && (
         <svg
+          ref={svgRef}
+          className={zoom.dragging ? "map-svg dragging" : "map-svg"}
           width={width}
           height={height}
           role={picking ? undefined : "img"}
@@ -457,7 +517,7 @@ export default function RouteMap() {
 
           {ordered.map(({ route, line }) => {
             const selected = route.id === selectedRouteId;
-            const d = path(line) ?? "";
+            const d = path(zoom.k >= FULL_DETAIL_K ? route.geometry : line) ?? "";
             return (
               <g key={route.id} className="map-route" onClick={() => selectRoute(route.id)}>
                 <title>{`${routeLabel(route.route_type)} route: click to select`}</title>
@@ -487,6 +547,31 @@ export default function RouteMap() {
               </text>
             );
           })}
+
+          {/* The directions step in view (or under the pointer in the list): its stretch, and the maneuver */}
+          {showDirections &&
+            directions &&
+            [hoveredStep, activeStep]
+              .filter((i, n, all): i is number => i !== null && all.indexOf(i) === n)
+              .map((i) => {
+                const d = directions[i];
+                const at = d.step.type === ARRIVE ? d.step.end : d.step.start;
+                const xy = projection([at[0], at[1]]);
+                const current = i === activeStep;
+                return (
+                  <g key={`step-${i}`} className={current ? "map-step active" : "map-step"} aria-hidden="true">
+                    <path className="map-step-line" d={path({ type: "LineString", coordinates: d.stretch }) ?? ""} />
+                    {xy && (
+                      <g transform={`translate(${xy[0]} ${xy[1]})`}>
+                        <circle r={current ? 13 : 10} />
+                        <g transform={`translate(${current ? -9 : -7} ${current ? -9 : -7})`}>
+                          <ManeuverIcon type={d.step.type} size={current ? 18 : 14} />
+                        </g>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
 
           {/* Highway shields over the routes, so the selected route's own shields read on top of it */}
           {network && (
@@ -621,7 +706,7 @@ export default function RouteMap() {
                 const xy = projection([stops.center.lon, stops.center.lat]);
                 if (!xy) return null;
                 return (
-                  <g className="poi-cluster" onClick={() => setMode("stops")}>
+                  <g className="poi-cluster" onClick={() => setView("stops")}>
                     <title>Click to zoom to these stops</title>
                     <rect x={xy[0] - 6} y={xy[1] - 6} width={12} height={12} transform={`rotate(45 ${xy[0]} ${xy[1]})`} />
                     <text x={xy[0] + 13} y={xy[1] + 16}>
@@ -677,22 +762,63 @@ export default function RouteMap() {
             )}
           </>
         )}
-        <div className="segmented" role="group" aria-label="Map zoom">
-          <button type="button" aria-pressed={view === "usa"} onClick={() => setMode("usa")}>
-            Full USA
-          </button>
-          <button type="button" aria-pressed={view === "route"} disabled={!hasRoutes} onClick={() => setMode("route")}>
-            Fit route
-          </button>
-          {stops && (
-            <button type="button" aria-pressed={view === "stops"} onClick={() => setMode("stops")}>
-              Stops
+        <div className="map-header-controls">
+          <div className="segmented" role="group" aria-label="Map view">
+            {/* pressed only while showing that fit, not after zooming or panning away from it */}
+            <button type="button" aria-pressed={view === "usa" && !zoom.zoomed} onClick={() => setView("usa")}>
+              Full USA
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "route" && !zoom.zoomed}
+              disabled={!hasRoutes}
+              onClick={() => setView("route")}
+            >
+              Fit route
+            </button>
+            {stops && (
+              <button type="button" aria-pressed={view === "stops" && !zoom.zoomed} onClick={() => setView("stops")}>
+                Stops
+              </button>
+            )}
+          </div>
+          {hasRoutes && (
+            <button
+              type="button"
+              className="directions-toggle"
+              aria-pressed={directionsOpen}
+              onClick={() => setDirectionsOpen((open) => !open)}
+            >
+              Directions
             </button>
           )}
         </div>
       </div>
 
-      {places && places.length > 0 ? (
+      <div className="zoom-controls" role="group" aria-label="Zoom">
+        <button type="button" aria-label="Zoom in" onClick={() => zoom.zoomBy(ZOOM_BUTTON_FACTOR)}>
+          +
+        </button>
+        <button type="button" aria-label="Zoom out" onClick={() => zoom.zoomBy(1 / ZOOM_BUTTON_FACTOR)}>
+          &minus;
+        </button>
+        <button type="button" aria-label="Reset zoom" disabled={!zoom.zoomed} onClick={zoom.reset}>
+          &#x2922;
+        </button>
+      </div>
+
+      {showDirections && directionsRoute ? (
+        <DirectionsPanel
+          routeType={directionsRoute.route_type}
+          directions={directions}
+          distanceMiles={directionsRoute.distance_miles}
+          durationSeconds={directionsRoute.duration_seconds}
+          active={activeStep}
+          onSelect={showStep}
+          onHover={setHoveredStep}
+          onClose={() => setDirectionsOpen(false)}
+        />
+      ) : places && places.length > 0 ? (
         <PlacesPanel groups={places} hovered={hoveredPlace} onHover={setHoveredPlace} />
       ) : stops && (
         <section className="poi-list" aria-label="Stops">

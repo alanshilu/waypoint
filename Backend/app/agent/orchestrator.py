@@ -134,6 +134,9 @@ def model_view(result: Any) -> Any:
             elif key == "elevation_profile" and isinstance(value, list) and value:
                 metres = [p.get("m") for p in value if isinstance(p, dict) and p.get("m") is not None]
                 out[key] = {"samples": len(value), "min_m": min(metres, default=None), "max_m": max(metres, default=None)}
+            elif key == "directions" and isinstance(value, list):
+                # the app shows the turn-by-turn list; the model only needs to know it exists
+                out[key] = {"steps": len(value)}
             else:
                 out[key] = model_view(value)
         return out

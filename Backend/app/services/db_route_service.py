@@ -70,6 +70,7 @@ def save_routes_to_db(db: Session, trip_id: int, routes_data: dict) -> list[Rout
             descent_m=data.get("descent_m", 0.0),
             scenic_score=data.get("scenic_score", 0.0),
             elevation_profile=build_elevation_profile(data["geometry"], data["distance_miles"]),
+            directions=data.get("directions"),
             geometry=postgis_geom,
             is_selected=False
         )

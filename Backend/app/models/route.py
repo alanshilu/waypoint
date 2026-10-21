@@ -29,6 +29,8 @@ class Route(Base):
 
     # Downsampled [{"mile": float, "m": float}, ...]; null for routes saved before elevation was kept
     elevation_profile = Column(JSON, nullable=True)
+    # Turn-by-turn steps (routing_service.directions_from); null for routes saved before directions were kept
+    directions = Column(JSON, nullable=True)
 
     is_selected = Column(Boolean, default=False)
     created_at = Column(

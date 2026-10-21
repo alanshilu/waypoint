@@ -28,11 +28,12 @@ def generate_and_save_routes(
         raise HTTPException(status_code=404, detail="Trip not found")
 
     if reuse_existing:
-        # newest route of each type; reuse only when the trip has both
+        # newest route of each type; reuse only when the trip has both, and both have directions
+        # (routes saved before directions were kept are generated again, once)
         latest: dict[str, Route] = {}
         for route in db.query(Route).filter(Route.trip_id == trip_id).order_by(Route.id.desc()):
             latest.setdefault(route.route_type, route)
-        if all(t in latest for t in ROUTE_TYPES):
+        if all(t in latest and latest[t].directions is not None for t in ROUTE_TYPES):
             return {
                 "status": "success",
                 "trip_id": trip_id,

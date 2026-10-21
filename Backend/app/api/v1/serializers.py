@@ -33,6 +33,8 @@ def route_to_dict(route: Route, tolerance: float = DEFAULT_SIMPLIFY_TOLERANCE) -
         "is_selected": bool(route.is_selected),
         "geometry": mapping(line),  # GeoJSON LineString, [lon, lat] pairs
         "elevation_profile": route.elevation_profile,
+        # null for routes saved before directions were kept
+        "directions": route.directions,
         "created_at": route.created_at,
     }
 

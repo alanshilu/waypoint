@@ -26,6 +26,30 @@ def format_duration(seconds: int) -> str:
     m = int((seconds % 3600) // 60)
     return f"{h}h {m}m"
 
+def directions_from(segment: dict, coords: list) -> list[dict]:
+    """
+    Turn-by-turn steps from an ORS segment. Each step's start and end come from the full-resolution
+    geometry (its way_points index into it), so they stay exact after the served line is simplified.
+    ORS often leaves motorway steps unnamed ("-"); name is None then.
+    """
+    steps = []
+    for step in segment.get("steps", []):
+        first, last = step["way_points"]
+        name = step.get("name")
+        steps.append({
+            "instruction": step["instruction"],
+            "name": name if name and name != "-" else None,
+            # ORS instruction types: 0 left, 1 right, 2/3 sharp, 4/5 slight, 6 straight, 7/8 roundabout,
+            # 9 U-turn, 10 arrive, 11 depart, 12/13 keep left/right
+            "type": step["type"],
+            "distance_miles": round(step["distance"] / 1609.34, 2),
+            "duration_seconds": round(step["duration"]),
+            "start": [round(c, 5) for c in coords[first][:2]],
+            "end": [round(c, 5) for c in coords[last][:2]],
+        })
+    return steps
+
+
 def get_single_route(start_lon: float, start_lat: float, end_lon: float, end_lat: float, preference: str = "fastest", avoid_features: list = None) -> dict:
     """
     Calls ORS API to generate a route based on coordinates and preferences.
@@ -34,6 +58,8 @@ def get_single_route(start_lon: float, start_lat: float, end_lon: float, end_lat
         "coordinates": [[start_lon, start_lat], [end_lon, end_lat]],
         "preference": preference,
         "elevation": True,
+        "instructions": True,
+        "language": "en",
         "extra_info": ["surface", "waytype", "steepness", "suitability", "tollways", "traildifficulty", "roadaccessrestrictions"],
     }
     
@@ -66,8 +92,9 @@ def get_single_route(start_lon: float, start_lat: float, end_lon: float, end_lat
         "duration_hms": format_duration(segment["duration"]),
         "ascent_m": segment.get("ascent"),      
         "descent_m": segment.get("descent"),
-        "geometry": route["geometry"]["coordinates"],   
-        "extras": props.get("extras", {}),       
+        "geometry": route["geometry"]["coordinates"],
+        "extras": props.get("extras", {}),
+        "directions": directions_from(segment, route["geometry"]["coordinates"]),
     }
 
 def get_route_options(start_lon: float, start_lat: float, end_lon: float, end_lat: float) -> dict:

@@ -168,8 +168,10 @@ const along = new WeakMap<LineString, WeakMap<Highway[], HighwayOnRoute[]>>();
  * The highways a route drives on, in driving order: each sample point along the route counts towards the
  * nearest highway within TOLERANCE_MILES, and highways it follows for at least MIN_MILES are kept.
  */
-export function highwaysAlong(route: LineString, highways: Highway[]): HighwayOnRoute[] {
-  const cached = along.get(route)?.get(highways);
+export function highwaysAlong(route: LineString, highways: Highway[], minMiles = MIN_MILES): HighwayOnRoute[] {
+  // whole routes are cached; a one-off stretch (a directions step, with its own minimum) is not
+  const cacheable = minMiles === MIN_MILES;
+  const cached = cacheable ? along.get(route)?.get(highways) : undefined;
   if (cached) return cached;
 
   const index = segmentIndex(highways);
@@ -201,12 +203,14 @@ export function highwaysAlong(route: LineString, highways: Highway[]): HighwayOn
 
   const result = [...credited.entries()]
     .map(([h, points]) => ({ h, highway: highways[h], miles: points.length * SAMPLE_MILES, at: points[points.length >> 1] }))
-    .filter((r) => r.miles >= MIN_MILES)
+    .filter((r) => r.miles >= minMiles)
     .sort((a, b) => firstSeen.get(a.h)! - firstSeen.get(b.h)!)
     .map(({ highway, miles, at }) => ({ highway, miles, at }));
 
-  if (!along.has(route)) along.set(route, new WeakMap());
-  along.get(route)!.set(highways, result);
+  if (cacheable) {
+    if (!along.has(route)) along.set(route, new WeakMap());
+    along.get(route)!.set(highways, result);
+  }
   return result;
 }
 
