@@ -255,6 +255,18 @@ button:disabled {
   color: var(--ink-muted);
 }
 
+.msg-elapsed {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* a slow step's explanation, on its own line */
+.msg-slow {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .msg {
   max-width: 100%;
   overflow-wrap: anywhere;

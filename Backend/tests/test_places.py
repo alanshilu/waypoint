@@ -11,7 +11,6 @@ from app.agent.responses import place_groups
 from app.main import app
 from app.services.places import PlacesError, PlacesFinder, get_places_finder
 from app.services.places.cache import DatabaseStore, PlacesCache, cache_key
-from app.services.places.finder import BUDGET_S
 from app.services.places.ors_fallback import OrsFoodFallback, ors_half_side_km
 from app.services.places.overpass import OverpassSource, build_query
 from evals.checks import Session, TurnRecord, poi_coords_grounded, stops_grounded
@@ -51,10 +50,10 @@ class FakeSource:
 
     def __init__(self, answer):
         self.answer = answer
-        self.calls: list[tuple[list, float, float]] = []  # (searches, food_radius_km, budget_s)
+        self.calls: list[tuple[list, float]] = []  # (searches, food_radius_km)
 
-    def search(self, searches, food_radius_km, budget_s):
-        self.calls.append((list(searches), food_radius_km, budget_s))
+    def search(self, searches, food_radius_km):
+        self.calls.append((list(searches), food_radius_km))
         result = self.answer(len(self.calls)) if callable(self.answer) else self.answer
         if isinstance(result, Exception):
             raise result
@@ -147,7 +146,8 @@ def test_queries_use_boxes_not_around():
     query = build_query([("camping", 36.85, -121.40), ("food", 37.0, -121.57)])
     assert "around:" not in query
     assert query.count('nwr["tourism"') == 1 and query.count('nwr["amenity"') == 1
-    assert query.startswith("[out:json][timeout:25]") and query.endswith("out center tags;")
+    # Overpass's own standard maximum: the only bound on how long a search runs
+    assert query.startswith("[out:json][timeout:180]") and query.endswith("out center tags;")
 
 
 # ---- When the source is down ----
@@ -218,22 +218,33 @@ def test_food_found_nowhere_near_is_searched_again_further_out():
     assert food["radius_mi"] == 12.4
     assert food["note"] == "Nothing within 3.1 mi, so searched out to 12.4 mi"
     assert by(groups, "2-1", "camping")["radius_mi"] == 15.5
-    # the second round asks only for the food, over the wider box, with what's left of the budget
+    # the second round asks only for the food, over the wider box
     assert len(source.calls) == 2 and source.kinds(1) == {"food"}
-    assert source.calls[1][1] == 20.0 and source.calls[1][2] <= BUDGET_S
+    assert source.calls[1][1] == 20.0
     # and the widened answer is cached
     finder.find([REMOTE])
     assert len(source.calls) == 2
 
 
-def test_no_time_for_the_wider_round_leaves_food_empty_and_uncached():
-    source = FakeSource([])
-    # the search starts at 0 s; by the wider round, only 5 s of the budget are left
-    clock = iter([0.0, BUDGET_S - 5])
-    finder = make_finder(source, clock=lambda: next(clock, BUDGET_S))
+def test_the_wider_round_always_runs_however_slow_the_first_was():
+    # no budget: a first round that took its time still gets the wider food search
+    def answer(call):
+        if call == 1:
+            time.sleep(0.2)
+            return [element(20, 35.05, -120.0, tourism="camp_site", name="Remote Camp")]
+        return [element(21, 35.135, -120.0, amenity="restaurant", name="Highway Diner")]
+
+    source = FakeSource(answer)
+    food = by(make_finder(source).find([REMOTE]), "2-1", "food")
+    assert len(source.calls) == 2 and [p["name"] for p in food["places"]] == ["Highway Diner"]
+
+
+def test_a_failed_wider_round_leaves_food_empty_and_uncached():
+    source = FakeSource(lambda call: [] if call == 1 else PlacesError("OpenStreetMap (Overpass) is busy: HTTP 429"))
+    finder = make_finder(source)
     food = by(finder.find([REMOTE]), "2-1", "food")
-    assert food["places"] == [] and "no time left" in food["note"]
-    assert len(source.calls) == 1
+    assert food["places"] == [] and food["note"] == ("Nothing within 3.1 mi; the wider search failed: "
+                                                     "OpenStreetMap (Overpass) is busy: HTTP 429")
     assert finder.cache.get(cache_key("food", 35.0, -120.0)) is None
     assert finder.cache.get(cache_key("camping", 35.0, -120.0)) is not None
 
@@ -323,9 +334,10 @@ def servers():
         time.sleep(min(delay, timeout))
         if how[0] == "ok" and delay <= timeout:
             return [{"from": url}]
-        raise PlacesError(f"{url} did not answer within {timeout:.0f} s", timed_out=True)
+        raise PlacesError(f"{url} went silent for {timeout:.0f} s", timed_out=True)
 
-    source = OverpassSource(["a", "b", "c"], request_once=once, hedge_after_s=0.2)
+    # a "hanging" server goes silent for the read timeout: 1 s here, so the tests don't wait 210 s
+    source = OverpassSource(["a", "b", "c"], request_once=once, hedge_after_s=0.2, read_timeout_s=1.0)
     return SimpleNamespace(source=source, behaviour=behaviour, asked=asked)
 
 
@@ -339,44 +351,50 @@ def timed(fn, *args):
 
 def test_a_healthy_first_server_is_the_only_one_asked(servers):
     servers.behaviour.update(a=("ok", 0.05), b=("ok", 0.0), c=("ok", 0.0))
-    assert servers.source.query("q", 10) == [{"from": "a"}]
+    assert servers.source.query("q") == [{"from": "a"}]
     assert servers.asked == ["a"]
 
 
 def test_a_failing_server_hands_over_at_once(servers):
     servers.behaviour.update(a=("http", 502), b=("ok", 0.0), c=("ok", 0.0))
-    result, took = timed(servers.source.query, "q", 10)
+    result, took = timed(servers.source.query, "q")
     assert result == [{"from": "b"}] and servers.asked == ["a", "b"]
     assert took < servers.source.hedge_after_s  # didn't wait for the hedge timer
 
 
 def test_a_stalled_server_is_overtaken_without_waiting_for_it(servers):
     servers.behaviour.update(a=("hang",), b=("ok", 0.05), c=("ok", 0.0))
-    result, took = timed(servers.source.query, "q", 10)
+    result, took = timed(servers.source.query, "q")
     assert result == [{"from": "b"}]
     assert took < 1  # about hedge_after_s, not server a's timeout
 
 
-def test_the_budget_bounds_the_whole_search(servers):
+def test_a_slow_answer_is_waited_for_with_no_deadline(servers):
+    # every other server fails; the slow one is past the hedge timer many times over and still wins
+    servers.behaviour.update(a=("http", 502), b=("ok", 0.8), c=("http", 429))
+    result, took = timed(servers.source.query, "q")
+    assert result == [{"from": "b"}] and took >= 0.8
+
+
+def test_every_server_going_silent_fails_instead_of_hanging(servers):
     servers.behaviour.update(a=("hang",), b=("hang",), c=("hang",))
-    error, took = timed(servers.source.query, "q", 1.0)
-    assert isinstance(error, PlacesError) and error.timed_out
-    assert took < 1.5
+    error, took = timed(servers.source.query, "q")
+    assert isinstance(error, PlacesError) and error.timed_out and "went silent" in str(error)
+    assert took < 2  # each server's read timeout, started 0.2 s apart
 
 
 def test_every_server_failing_reports_the_timeout_over_a_502(servers):
     servers.behaviour.update(a=("http", 502), b=("http", 504), c=("http", 429))
-    error, took = timed(servers.source.query, "q", 10)
+    error, took = timed(servers.source.query, "q")
     assert isinstance(error, PlacesError) and str(error) == "HTTP 504" and error.timed_out
     assert servers.asked == ["a", "b", "c"] and took < 1
 
 
-def test_search_builds_the_query_it_sends(servers):
-    servers.behaviour.update(a=("ok", 0.0))
+def test_search_builds_the_query_it_sends_and_reads_with_the_long_timeout():
     sent = []
-    source = OverpassSource(["a"], request_once=lambda url, query, timeout: sent.append(query) or [])
-    source.search([("food", 37.0, -121.57)], 20.0, 10)
-    assert sent == [build_query([("food", 37.0, -121.57)], 20.0)]
+    source = OverpassSource(["a"], request_once=lambda url, query, timeout: sent.append((query, timeout)) or [])
+    source.search([("food", 37.0, -121.57)], 20.0)
+    assert sent == [(build_query([("food", 37.0, -121.57)], 20.0), 210)]  # Overpass's 180 s, plus a margin
 
 
 # ---- The places_cache table ----

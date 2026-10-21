@@ -49,10 +49,48 @@ const ACTIVITY: Record<string, string> = {
   select_route: "Selecting the route",
 };
 
-function pendingLabel(steps: StepView[]): string {
+// Shown once a tool has run this long (s), so a slow step reads as working, not stuck. The place search
+// waits for OpenStreetMap's free servers however long they take.
+const SLOW_NOTES: Record<string, { after: number; text: string }> = {
+  find_places: {
+    after: 15,
+    text: "OpenStreetMap's free servers can be slow. Still searching; this can take a few minutes.",
+  },
+};
+// The running time shows from this many seconds in
+const SHOW_ELAPSED_AFTER_S = 3;
+
+/** Re-renders every second while mounted. */
+function useEverySecond(): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+/** What the agent is doing now, how long the current tool has been at it, and a word when that's slow. */
+function PendingStatus({ steps }: { steps: StepView[] }) {
+  const now = useEverySecond();
   const running = [...steps].reverse().find((s) => s.status === "running");
   // between tool calls the model is deciding what to do next, or writing the answer
-  return running ? `${ACTIVITY[running.tool] ?? `Running ${running.tool}`}…` : "Thinking…";
+  if (!running) return <p className="msg-pending" role="status">Thinking…</p>;
+  const elapsed = running.startedAt ? Math.floor((now - running.startedAt) / 1000) : 0;
+  const slow = SLOW_NOTES[running.tool];
+  return (
+    <p className="msg-pending" role="status">
+      {ACTIVITY[running.tool] ?? `Running ${running.tool}`}…
+      {elapsed >= SHOW_ELAPSED_AFTER_S && (
+        // not announced: a screen reader would read it every second
+        <span className="msg-elapsed data" aria-hidden="true">
+          {" "}
+          {elapsed} s
+        </span>
+      )}
+      {slow && elapsed >= slow.after && <span className="msg-slow">{slow.text}</span>}
+    </p>
+  );
 }
 
 export default function ChatPanel() {
@@ -105,9 +143,7 @@ export default function ChatPanel() {
             <div key={message.id} className="msg assistant">
               <StepChecklist steps={message.steps} />
               {message.pending ? (
-                <p className="msg-pending" role="status">
-                  {pendingLabel(message.steps)}
-                </p>
+                <PendingStatus steps={message.steps} />
               ) : message.failed ? (
                 <div className="msg-error" role="alert">
                   <p>{message.text}</p>

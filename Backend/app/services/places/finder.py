@@ -7,36 +7,23 @@ tags that help choose.
 
 from __future__ import annotations
 
-import time
-from collections.abc import Callable
-
 from app.services.places import osm
 from app.services.places.cache import PlacesCache, cache_key
 from app.services.places.osm import FOOD_RADIUS_KM, FOOD_WIDE_RADIUS_KM, KM_PER_MILE, Search
 from app.services.places.sources import FoodFallback, PlaceSource, PlacesError
 
-# One find_places call takes at most this long in all; when the main source can't answer in time, food
-# falls back (about a second)
-BUDGET_S = 50
-# The wider food round only starts with at least this much of the budget left
-WIDE_ROUND_MIN_S = 10
-
 
 class PlacesFinder:
     """
     Finds places with a main source, a food fallback for when it's down, and a cache. Each is passed in, so
-    another source (or a fake, in tests) needs no change here.
+    another source (or a fake, in tests) needs no change here. There is no deadline: a slow source is waited
+    for (the app tells the user it's still searching); only a failed one falls back.
     """
 
-    def __init__(self, source: PlaceSource, food_fallback: FoodFallback, cache: PlacesCache,
-                 budget_s: float = BUDGET_S, wide_round_min_s: float = WIDE_ROUND_MIN_S,
-                 clock: Callable[[], float] = time.monotonic):
+    def __init__(self, source: PlaceSource, food_fallback: FoodFallback, cache: PlacesCache):
         self.source = source
         self.food_fallback = food_fallback
         self.cache = cache
-        self.budget_s = budget_s
-        self.wide_round_min_s = wide_round_min_s
-        self._clock = clock
 
     def find(self, points: list[dict]) -> list[dict]:
         """
@@ -46,10 +33,9 @@ class PlacesFinder:
         each group's places ranked best first, at most PLACES_PER_GROUP.
 
         One request to the source covers every search not already cached; food searches that find nothing
-        are repeated once out to FOOD_WIDE_RADIUS_KM, all within budget_s. If the source is down, food comes
-        from the fallback and campsites come back empty with a note. Only complete answers are cached.
+        are repeated once out to FOOD_WIDE_RADIUS_KM. If the source fails, food comes from the fallback and
+        campsites come back empty with a note. Only complete answers are cached.
         """
-        started = self._clock()
         searches: list[Search] = list(dict.fromkeys((kind, p["lat"], p["lon"]) for p in points for kind in dict.fromkeys(p["kinds"])))
         missing_keys = set(self.cache.missing([cache_key(*s) for s in searches]))
         missing = [s for s in searches if cache_key(*s) in missing_keys]
@@ -58,7 +44,7 @@ class PlacesFinder:
 
         if missing:
             try:
-                found = osm.candidates(self.source.search(missing, FOOD_RADIUS_KM, self.budget_s))
+                found = osm.candidates(self.source.search(missing, FOOD_RADIUS_KM))
             except PlacesError as e:
                 for kind, lat, lon in missing:
                     fresh[cache_key(kind, lat, lon)] = (self._unavailable(e) if kind == "camping"
@@ -68,7 +54,7 @@ class PlacesFinder:
                     within = osm.radius_km(kind)
                     fresh[cache_key(kind, lat, lon)] = {"places": osm.ranked(found, kind, lat, lon, within),
                                                        "source": self.source.name, "radius_km": within}
-                complete = self._widen_empty_food([s for s in missing if s[0] == "food"], fresh, started)
+                complete = self._widen_empty_food([s for s in missing if s[0] == "food"], fresh)
                 self.cache.put({cache_key(*s): fresh[cache_key(*s)] for s in missing if s[0] == "camping" or complete})
 
         return [self._group(p, kind, fresh) for p in points for kind in dict.fromkeys(p["kinds"])]
@@ -87,24 +73,18 @@ class PlacesFinder:
             return {"places": [], "source": "none",
                     "note": f"Food search unavailable: {error}; fallback failed: {fallback}"}
 
-    def _widen_empty_food(self, food_searches: list[Search], fresh: dict, started: float) -> bool:
+    def _widen_empty_food(self, food_searches: list[Search], fresh: dict) -> bool:
         """
         Repeats food searches that found nothing, out to FOOD_WIDE_RADIUS_KM, in one more request, updating
-        fresh in place. Returns False when that round couldn't run or failed (so the empty results aren't
-        cached), True otherwise.
+        fresh in place. Returns False when that round failed (so the empty results aren't cached), True otherwise.
         """
         empty = [s for s in food_searches if not fresh[cache_key(*s)]["places"]]
         if not empty:
             return True
         near_mi = round(FOOD_RADIUS_KM / KM_PER_MILE, 1)
         wide_mi = round(FOOD_WIDE_RADIUS_KM / KM_PER_MILE, 1)
-        left = self.budget_s - (self._clock() - started)
-        if left < self.wide_round_min_s:
-            for s in empty:
-                fresh[cache_key(*s)]["note"] = f"Nothing within {near_mi} mi; no time left to search further"
-            return False
         try:
-            found = osm.candidates(self.source.search(empty, FOOD_WIDE_RADIUS_KM, left))
+            found = osm.candidates(self.source.search(empty, FOOD_WIDE_RADIUS_KM))
         except PlacesError as e:
             for s in empty:
                 fresh[cache_key(*s)]["note"] = f"Nothing within {near_mi} mi; the wider search failed: {e}"

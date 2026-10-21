@@ -214,6 +214,8 @@ export interface StepView {
   tokens?: StepTokens | null;
   /** Why the tool failed, as the backend reported it */
   error?: string | null;
+  /** When it started (Date.now()), for the elapsed time while it runs */
+  startedAt?: number;
 }
 
 export interface ChatMessage {

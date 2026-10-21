@@ -1,8 +1,7 @@
 import requests
 
-from app.agent.tools.http import check
-
 from app.agent.tools.geocode_location import BASE_URL
+from app.agent.tools.http import check
 
 
 def get_weather_forecast(lat: float, lon: float, target_date: str | None = None) -> dict:

@@ -335,8 +335,8 @@ docs/screenshots/          the images in this README
 - **The per-IP limit trusts the proxy.** The visitor's address comes from the `X-Forwarded-For` header set by the nginx container. Don't publish the backend's port directly, or a client could set that header itself.
 - **Stop planning assumes a uniform pace** along the route and uses the origin's time zone for the whole trip.
 - **The evals are one sample** and have documented blind spots (place names are found by heuristic; any tool number can ground an equal number in the reply).
-- **Campsite and food searches depend on the free public Overpass service**, which swings between answering in seconds and not answering at all.
-  - A second server is asked as soon as the first fails or is slow, and a search gives up after about 30 s (50 s at most, including a wider food search).
+- **Campsite and food searches depend on the free public Overpass service**, which swings between answering in seconds and taking minutes.
+  - A search waits for it with no deadline of its own (each Overpass query ends on the server within 180 s); a second server is asked as soon as the first fails or is slow, and the chat shows how long the search has been running.
   - Results are cached for a day in the database (`places_cache`), so restarts and Render sleeps keep them; a repeated route is answered instantly.
   - If Overpass fails, food falls back to OpenRouteService within about 1.6 miles, and campsites come back empty with a note.
 - **Place facts are only as complete as OpenStreetMap.** Many campsites list no amenities, and opening hours are shown as tagged, not checked against your arrival time.

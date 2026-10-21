@@ -1,8 +1,7 @@
 import requests
 
-from app.agent.tools.http import check
-
 from app.agent.tools.geocode_location import BASE_URL
+from app.agent.tools.http import check
 from app.core.config import settings
 from app.core.internal import internal_headers
 

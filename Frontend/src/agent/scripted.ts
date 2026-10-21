@@ -23,7 +23,7 @@ export function createScriptedAgent(
       const emit = () => onSteps(steps.map((s) => ({ ...s })));
 
       async function step<T>(tool: string, call: () => Promise<T>): Promise<T> {
-        const view: StepView = { tool, status: "running", ms: null, cache: null };
+        const view: StepView = { tool, status: "running", ms: null, cache: null, startedAt: Date.now() };
         steps.push(view);
         emit();
         const started = performance.now();

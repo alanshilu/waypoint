@@ -19,12 +19,12 @@ class PlacesError(Exception):
 
 
 class PlaceSource(Protocol):
-    """The main source: every search in one request, within budget_s."""
+    """The main source: every search in one request. Waited for as long as it takes."""
 
     #: what the results say they came from, e.g. "openstreetmap"
     name: str
 
-    def search(self, searches: list[Search], food_radius_km: float, budget_s: float) -> list[dict]:
+    def search(self, searches: list[Search], food_radius_km: float) -> list[dict]:
         """Elements near each (kind, lat, lon): campsites within the camping radius, food within food_radius_km."""
         ...
 

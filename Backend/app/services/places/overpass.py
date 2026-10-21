@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import math
-import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from urllib import error, parse, request
@@ -16,11 +15,13 @@ from urllib import error, parse, request
 from app.services.places.osm import CAMPING_RADIUS_KM, CAMPING_TAGS, FOOD_RADIUS_KM, FOOD_TAGS, Search
 from app.services.places.sources import PlacesError
 
-# Public Overpass servers swing between answering in seconds and not at all: on 2026-10-21 one returned
-# 502 at once and the others timed out at 90 s on the smallest query, then minutes later the same search
-# took 19 s. So no single request waits long, and the next server starts when one fails or hasn't
-# answered within HEDGE_AFTER_S; the first answer wins.
-TIMEOUT_S = 30
+# Public Overpass servers swing between answering in seconds and taking minutes. A search waits for them:
+# we set no deadline of our own, the app shows the user it's still searching, and the next server also
+# starts when one fails or hasn't answered within HEDGE_AFTER_S, so the first answer wins.
+# The one bound is Overpass's: a query runs at most QUERY_TIMEOUT_S on the server (180 s, its standard
+# maximum) and then fails there. The read timeout only notices a connection that went silent past that.
+QUERY_TIMEOUT_S = 180
+READ_TIMEOUT_S = QUERY_TIMEOUT_S + 30
 HEDGE_AFTER_S = 6
 USER_AGENT = "Waypoint road-trip planner (https://github.com/alanshilu/waypoint)"
 
@@ -34,7 +35,7 @@ def _bbox(lat: float, lon: float, radius_km: float) -> str:
     return f"{lat - dlat:.4f},{lon - dlon:.4f},{lat + dlat:.4f},{lon + dlon:.4f}"
 
 
-def build_query(searches: list[Search], food_radius_km: float = FOOD_RADIUS_KM, timeout_s: float = TIMEOUT_S) -> str:
+def build_query(searches: list[Search], food_radius_km: float = FOOD_RADIUS_KM, timeout_s: float = QUERY_TIMEOUT_S) -> str:
     """One Overpass QL query for every (kind, lat, lon) search; boxes, trimmed to the radius afterwards."""
     parts = []
     for kind, lat, lon in searches:
@@ -42,7 +43,7 @@ def build_query(searches: list[Search], food_radius_km: float = FOOD_RADIUS_KM, 
             parts.append(f'nwr["tourism"~"^({"|".join(CAMPING_TAGS)})$"]({_bbox(lat, lon, CAMPING_RADIUS_KM)});')
         else:
             parts.append(f'nwr["amenity"~"^({"|".join(FOOD_TAGS)})$"]({_bbox(lat, lon, food_radius_km)});')
-    return f"[out:json][timeout:{int(timeout_s) - 5}];({''.join(parts)});out center tags;"
+    return f"[out:json][timeout:{int(timeout_s)}];({''.join(parts)});out center tags;"
 
 
 def request_once(url: str, query: str, timeout: float, user_agent: str = USER_AGENT) -> list[dict]:
@@ -57,62 +58,57 @@ def request_once(url: str, query: str, timeout: float, user_agent: str = USER_AG
         raise PlacesError(f"OpenStreetMap (Overpass) is {'busy' if busy else 'failing'}: HTTP {e.code}",
                           timed_out=e.code == 504) from e
     except TimeoutError as e:
-        raise PlacesError(f"OpenStreetMap (Overpass) did not answer within {timeout:.0f} s", timed_out=True) from e
+        raise PlacesError(f"OpenStreetMap (Overpass) went silent for {timeout:.0f} s", timed_out=True) from e
     except error.URLError as e:
         if isinstance(e.reason, TimeoutError):
-            raise PlacesError(f"OpenStreetMap (Overpass) did not answer within {timeout:.0f} s", timed_out=True) from e
+            raise PlacesError(f"OpenStreetMap (Overpass) went silent for {timeout:.0f} s", timed_out=True) from e
         raise PlacesError(f"OpenStreetMap (Overpass) is unreachable: {e.reason}") from e
 
 
 class OverpassSource:
-    """A PlaceSource over the given Overpass servers, asked in a hedged sequence."""
+    """A PlaceSource over the given Overpass servers, asked in a hedged sequence, waited for without a deadline."""
 
     name = "openstreetmap"
 
     def __init__(self, urls: list[str], request_once: RequestOnce = request_once,
-                 timeout_s: float = TIMEOUT_S, hedge_after_s: float = HEDGE_AFTER_S):
+                 query_timeout_s: float = QUERY_TIMEOUT_S, read_timeout_s: float = READ_TIMEOUT_S,
+                 hedge_after_s: float = HEDGE_AFTER_S):
         self.urls = list(urls)
         self._request_once = request_once
-        self.timeout_s = timeout_s
+        self.query_timeout_s = query_timeout_s
+        self.read_timeout_s = read_timeout_s
         self.hedge_after_s = hedge_after_s
 
-    def search(self, searches: list[Search], food_radius_km: float, budget_s: float) -> list[dict]:
-        return self.query(build_query(searches, food_radius_km, self.timeout_s), budget_s)
+    def search(self, searches: list[Search], food_radius_km: float) -> list[dict]:
+        return self.query(build_query(searches, food_radius_km, self.query_timeout_s))
 
-    def query(self, query: str, budget_s: float) -> list[dict]:
+    def query(self, query: str) -> list[dict]:
         """
-        The first answer to this query from the servers, within budget_s. Raises PlacesError.
+        The first answer to this query from the servers. Raises PlacesError when every server failed.
 
         Hedged: the first server is asked, and the next one too as soon as a request fails or hedge_after_s
-        passes without an answer; whichever answers first wins. A failing or stalled server costs seconds
-        instead of the whole budget, and a healthy first server is the only one asked.
+        passes without an answer; whichever answers first wins, however long it takes. A healthy first
+        server is the only one asked.
         """
         urls = list(self.urls)
         if not urls:
             raise PlacesError("No OpenStreetMap (Overpass) server is configured")
-        deadline = time.monotonic() + budget_s
         errors: list[PlacesError] = []
-        pending: set = set()
         pool = ThreadPoolExecutor(max_workers=len(urls), thread_name_prefix="overpass")
+        pending = {pool.submit(self._request_once, urls.pop(0), query, self.read_timeout_s)}
         try:
-            while True:
-                left = deadline - time.monotonic()
-                if urls and left >= 5:
-                    pending.add(pool.submit(self._request_once, urls.pop(0), query, min(self.timeout_s, left)))
-                if not pending or left <= 0:
-                    break
-                done, pending = wait(pending, timeout=min(self.hedge_after_s, left) if urls else left,
-                                     return_when=FIRST_COMPLETED)
+            while pending:
+                done, pending = wait(pending, timeout=self.hedge_after_s if urls else None, return_when=FIRST_COMPLETED)
                 for future in done:
                     try:
                         return future.result()
                     except PlacesError as e:
                         errors.append(e)
+                # a server failed, or is taking a while: ask the next one too
+                if urls:
+                    pending.add(pool.submit(self._request_once, urls.pop(0), query, self.read_timeout_s))
         finally:
-            # a request still running ends on its own timeout; nothing waits for it
+            # a slower server's request still running ends on its own; nothing waits for it
             pool.shutdown(wait=False, cancel_futures=True)
-        if pending or not errors:
-            errors.append(PlacesError(f"OpenStreetMap (Overpass) did not answer within {budget_s:.0f} s",
-                                      timed_out=True))
-        # a timeout says more about why the search was slow than a quick 502 from another server
+        # a timeout says more about why the search failed than a quick 502 from another server
         raise next((e for e in errors if e.timed_out), errors[-1])

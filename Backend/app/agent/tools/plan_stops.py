@@ -1,8 +1,7 @@
 import requests
 
-from app.agent.tools.http import check
-
 from app.agent.tools.geocode_location import BASE_URL
+from app.agent.tools.http import check
 
 
 def plan_stops(trip_id: int, route_id: int, start: str | None = None, max_hours: float | None = None) -> dict:

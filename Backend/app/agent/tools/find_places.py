@@ -1,13 +1,15 @@
 import requests
 
+from app.agent.tools.geocode_location import BASE_URL
 from app.agent.tools.http import check
 
-from app.agent.tools.geocode_location import BASE_URL
+# Connect timeout only: the search waits for OpenStreetMap however long it takes, and the app tells the user
+CONNECT_TIMEOUT_S = 10
 
 
 def find_places(points: list[dict]) -> dict:
     """Campsites and places to eat near the trip's stops, ranked, from OpenStreetMap."""
-    response = requests.post(f"{BASE_URL}/places/search", json={"points": points}, timeout=150)
+    response = requests.post(f"{BASE_URL}/places/search", json={"points": points}, timeout=(CONNECT_TIMEOUT_S, None))
     if response.status_code in (400, 422):
         return {"error": response.json().get("detail", response.text)}
     check(response)

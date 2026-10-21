@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     # the deployed frontend, e.g. "http://localhost:5173,https://waypoint.example.com"
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
 
-    # POST /agent/message
-    # Covers a slow route generation (ORS_ROUTE_TIMEOUT_S) or place search (up to 75 s on a busy
-    # Overpass day) plus the other tool and model calls of a turn
-    agent_timeout_s: float = Field(default=240.0, validation_alias="AGENT_TIMEOUT_S")
+    # POST /agent/message: a safety net for a turn that never ends, not a budget. The place search waits
+    # for OpenStreetMap as long as it takes (each Overpass query ends on the server within 180 s, a wider
+    # food search can follow), and the app shows the user it's still working, so this is generous.
+    agent_timeout_s: float = Field(default=900.0, validation_alias="AGENT_TIMEOUT_S")
     agent_rate_limit_per_minute: int = Field(default=10, validation_alias="AGENT_RATE_LIMIT_PER_MINUTE")
     agent_session_ttl_s: int = Field(default=1800, validation_alias="AGENT_SESSION_TTL_S")
     # Cost limits for a public demo; 0 turns a limit off. The daily cap resets at midnight UTC.

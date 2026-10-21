@@ -73,7 +73,7 @@ export function createRemoteAgent(agent: AgentApi, trips: Pick<TripApi, "getTrip
       const emit = () => onSteps(steps.map((s) => ({ ...s })));
       const onEvent = (event: AgentStreamEvent) => {
         if (event.type === "tool_start") {
-          steps.push({ tool: event.tool, status: "running", ms: null, cache: null, tokens: null });
+          steps.push({ tool: event.tool, status: "running", ms: null, cache: null, tokens: null, startedAt: Date.now() });
         } else if (event.type === "tool_end") {
           const view = [...steps].reverse().find((s) => s.tool === event.tool && s.status === "running");
           if (view) {
