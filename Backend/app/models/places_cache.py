@@ -5,7 +5,7 @@ from app.core.db import Base
 
 
 class PlacesCacheEntry(Base):
-    """One find_places search result, so the day-long cache survives restarts (see places_service)."""
+    """One find_places search result, so the day-long cache survives restarts (see app/services/places/cache.py)."""
 
     __tablename__ = "places_cache"
 

@@ -1,11 +1,11 @@
-"""POST /places/search: campsites and places to eat near a trip's stops (see app/services/places_service.py)."""
+"""POST /places/search: campsites and places to eat near a trip's stops (see app/services/places/)."""
 
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.services.places_service import find_places
+from app.services.places import PlacesFinder, get_places_finder
 
 router = APIRouter()
 
@@ -22,12 +22,12 @@ class PlaceSearch(BaseModel):
 
 
 @router.post("/search")
-def search_places(body: PlaceSearch):
+def search_places(body: PlaceSearch, finder: PlacesFinder = Depends(get_places_finder)):
     """
     Campsites (within about 15 miles) and places to eat (about 3 miles) near each point, from
     OpenStreetMap, ranked by distance and by how much is known about each. One group per point and kind.
     """
-    groups = find_places([p.model_dump() for p in body.points])
+    groups = finder.find([p.model_dump() for p in body.points])
     return {
         "groups": groups,
         "attribution": "Place data © OpenStreetMap contributors (ODbL)",
