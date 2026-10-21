@@ -30,6 +30,7 @@ function StepChecklist({ steps }: { steps: StepView[] }) {
           <span className="step-tool">{step.tool}</span>
           <span className="sr-only">{STATUS_LABEL[step.status]}</span>
           <span className="step-ms">{step.ms === null ? "…" : `${step.ms} ms`}</span>
+          {step.status === "error" && step.error && <span className="step-error">{step.error}</span>}
         </li>
       ))}
     </ol>

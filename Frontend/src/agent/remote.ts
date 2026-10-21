@@ -78,6 +78,7 @@ export function createRemoteAgent(agent: AgentApi, trips: Pick<TripApi, "getTrip
           const view = [...steps].reverse().find((s) => s.tool === event.tool && s.status === "running");
           if (view) {
             view.status = event.error ? "error" : "done";
+            view.error = event.error;
             view.ms = event.ms;
             view.cache = event.cached ? "hit" : null;
             view.tokens = event.tokens;
@@ -107,6 +108,7 @@ export function createRemoteAgent(agent: AgentApi, trips: Pick<TripApi, "getTrip
         response.tool_calls.map((c) => ({
           tool: c.tool,
           status: c.error ? "error" : "done",
+          error: c.error,
           ms: c.ms,
           cache: c.cached ? "hit" : null,
           tokens: c.tokens,

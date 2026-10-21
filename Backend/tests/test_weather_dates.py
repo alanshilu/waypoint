@@ -50,4 +50,4 @@ def test_endpoint_returns_400_not_500_for_an_unavailable_date(monkeypatch):
     monkeypatch.setattr(weather_endpoint, "get_forecast_for_date", lambda *a, **k: None)
     r = TestClient(app).get("/weather/forecast", params={"lat": 0, "lon": 0, "target_date": "2030-01-01"})
     assert r.status_code == 400
-    assert r.json()["detail"].startswith("Date is in the past")
+    assert r.json()["detail"].startswith("No forecast for that date: it is in the past or beyond the forecast range")

@@ -1,5 +1,6 @@
 import requests
 
+from app.agent.tools.http import check
 from app.core.config import settings
 
 BASE_URL = settings.api_base_url
@@ -12,7 +13,7 @@ def geocode_location(query: str) -> dict:
         params={"q": query},
         timeout=10,
     )
-    response.raise_for_status()
+    check(response)
     results = response.json()["results"]
     if not results:
         return {"error": f"No location found for '{query}'"}

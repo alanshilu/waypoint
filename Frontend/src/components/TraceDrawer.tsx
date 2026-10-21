@@ -67,7 +67,9 @@ export default function TraceDrawer() {
                   <tr key={i}>
                     <td>{i + 1}</td>
                     <td>{step.tool}</td>
-                    <td className={step.status === "error" ? "warn" : undefined}>{step.status}</td>
+                    <td className={step.status === "error" ? "warn" : undefined} title={step.error ?? undefined}>
+                      {step.status === "error" && step.error ? `error: ${step.error}` : step.status}
+                    </td>
                     <td className="numeric">{step.ms === null ? "…" : `${step.ms} ms`}</td>
                     <td className={step.cache === "hit" ? "good" : undefined}>{step.cache ?? "—"}</td>
                     {hasTokens && <td className="numeric">{tokenText(step)}</td>}

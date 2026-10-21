@@ -1,5 +1,7 @@
 import requests
 
+from app.agent.tools.http import check
+
 from app.agent.tools.geocode_location import BASE_URL
 
 
@@ -8,7 +10,7 @@ def find_places(points: list[dict]) -> dict:
     response = requests.post(f"{BASE_URL}/places/search", json={"points": points}, timeout=150)
     if response.status_code in (400, 422):
         return {"error": response.json().get("detail", response.text)}
-    response.raise_for_status()
+    check(response)
     return response.json()
 
 

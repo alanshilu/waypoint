@@ -1,5 +1,7 @@
 import requests
 
+from app.agent.tools.http import check
+
 from app.agent.tools.geocode_location import BASE_URL
 
 
@@ -11,7 +13,7 @@ def get_weather_forecast(lat: float, lon: float, target_date: str | None = None)
     response = requests.get(f"{BASE_URL}/weather/forecast", params=params, timeout=10)
     if response.status_code == 400:
         return {"error": response.json().get("detail", response.text), "target_date": target_date}
-    response.raise_for_status()
+    check(response)
     return response.json()
 
 

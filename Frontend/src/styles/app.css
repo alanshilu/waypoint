@@ -325,6 +325,14 @@ button:disabled {
   color: var(--ink-muted);
 }
 
+/* why a tool failed, on its own line under the step */
+.step-error {
+  grid-column: 2 / -1;
+  font-size: 11px;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

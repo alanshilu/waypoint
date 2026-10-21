@@ -34,6 +34,7 @@ export function createScriptedAgent(
           return value;
         } catch (error) {
           view.status = "error";
+          view.error = error instanceof Error ? error.message : String(error);
           throw error;
         } finally {
           view.ms = Math.round(performance.now() - started);

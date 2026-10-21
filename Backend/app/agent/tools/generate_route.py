@@ -1,5 +1,7 @@
 import requests
 
+from app.agent.tools.http import check
+
 from app.agent.tools.geocode_location import BASE_URL
 from app.core.config import settings
 from app.core.internal import internal_headers
@@ -20,7 +22,7 @@ def generate_routes(trip_id: int, force: bool = False) -> dict:
     if response.status_code in (502, 504):
         # the route service failed; give the model the reason rather than a bare HTTP error
         return {"error": response.json().get("detail", response.text)}
-    response.raise_for_status()
+    check(response)
     return response.json()
 
 

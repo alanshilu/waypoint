@@ -212,6 +212,8 @@ export interface StepView {
   ms: number | null;
   cache: CacheStatus;
   tokens?: StepTokens | null;
+  /** Why the tool failed, as the backend reported it */
+  error?: string | null;
 }
 
 export interface ChatMessage {

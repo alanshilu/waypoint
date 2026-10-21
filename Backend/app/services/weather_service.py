@@ -8,6 +8,8 @@ from datetime import date, datetime, timezone
 import math
 
 from app.core.config import settings
+from app.services import nws
+from app.services.errors import WeatherUnavailable
 
 log = logging.getLogger(__name__)
 CACHE_EXPIRE_S = 3600
@@ -64,7 +66,28 @@ def get_current_weather(lat: float, lon: float, units: str = "fahrenheit") -> di
         "condition": describe_code(current.Variables(2).Value()),
     }
 
+def _with_fallback(what: str, open_meteo, nws_fallback):
+    """Open-Meteo's answer, else the National Weather Service's (US only). Raises WeatherUnavailable."""
+    try:
+        return open_meteo()
+    except Exception as om_error:  # noqa: BLE001 - the free tier's daily limit, or any failure: try the fallback
+        log.warning("Weather: Open-Meteo failed for %s (%s); trying the National Weather Service", what, om_error)
+        try:
+            return nws_fallback()
+        except Exception as nws_error:  # noqa: BLE001 - both reasons go in the error
+            raise WeatherUnavailable(f"Open-Meteo: {om_error}; National Weather Service: {nws_error}") from nws_error
+
+
 def get_forecast(lat: float, lon: float, days: int = 7, units: str = "fahrenheit") -> list[dict]:
+    """The daily forecast. From the National Weather Service (about 7 days) when Open-Meteo refuses."""
+    return _with_fallback(
+        "a forecast",
+        lambda: _open_meteo_forecast(lat, lon, days, units),
+        lambda: nws.daily_forecast(retry_session, lat, lon, units)[0][:days],
+    )
+
+
+def _open_meteo_forecast(lat: float, lon: float, days: int = 7, units: str = "fahrenheit") -> list[dict]:
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -105,7 +128,15 @@ def get_forecast(lat: float, lon: float, days: int = 7, units: str = "fahrenheit
     return forecast
 
 def get_utc_offset_seconds(lat: float, lon: float) -> int:
-    """The current UTC offset at a point, from Open-Meteo's time zone lookup (cached like other calls)."""
+    """The current UTC offset at a point (cached like other calls); from the NWS forecast when Open-Meteo refuses."""
+    return _with_fallback(
+        "a time zone",
+        lambda: _open_meteo_utc_offset(lat, lon),
+        lambda: nws.daily_forecast(retry_session, lat, lon)[1],
+    )
+
+
+def _open_meteo_utc_offset(lat: float, lon: float) -> int:
     params = {
         "latitude": lat,
         "longitude": lon,

@@ -1,5 +1,7 @@
 import requests
 
+from app.agent.tools.http import check
+
 from app.agent.tools.geocode_location import BASE_URL
 
 
@@ -13,7 +15,7 @@ def plan_stops(trip_id: int, route_id: int, start: str | None = None, max_hours:
     response = requests.post(f"{BASE_URL}/trips/{trip_id}/plan", params=params, timeout=90)
     if response.status_code in (400, 404, 422):
         return {"error": response.json().get("detail", response.text)}
-    response.raise_for_status()
+    check(response)
     return response.json()
 
 

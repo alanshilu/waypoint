@@ -1,5 +1,6 @@
 import requests
 from app.agent.tools.geocode_location import BASE_URL
+from app.agent.tools.http import check
 from app.core.internal import internal_headers
 
 
@@ -10,7 +11,7 @@ def select_route(route_id: int) -> dict:
         headers=internal_headers(),
         timeout=10,
     )
-    response.raise_for_status()
+    check(response)
     return response.json()
 
 

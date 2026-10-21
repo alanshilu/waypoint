@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
+from app.services.errors import WeatherUnavailable
 from app.services.weather_service import get_current_weather, get_forecast, get_forecast_for_date
 
 router = APIRouter()
@@ -29,14 +30,19 @@ def weather_forecast(
         if target_date:
             forecast = get_forecast_for_date(lat, lon, target_date)
             if not forecast:
-                raise HTTPException(status_code=400, detail="Date is in the past or too far in the future (max 16 days).")
+                raise HTTPException(status_code=400, detail=(
+                    "No forecast for that date: it is in the past or beyond the forecast range "
+                    "(16 days, or about 7 while the National Weather Service is standing in for Open-Meteo)."))
             return forecast
-            
+
         # Default behavior: return the standard 7-day list
         return {"forecast": get_forecast(lat, lon, days=7)}
-        
+
     except HTTPException:
         raise  # the 400 above, not a server error
+    except WeatherUnavailable as exc:
+        # both weather services refused: an upstream problem, with both reasons
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
     except Exception as exc:
