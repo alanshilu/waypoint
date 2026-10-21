@@ -1,10 +1,30 @@
+import logging
+import sqlite3
+
 import openmeteo_requests
 import requests_cache
 from retry_requests import retry
 from datetime import date, datetime, timezone
 import math
 
-cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
+from app.core.config import settings
+
+log = logging.getLogger(__name__)
+CACHE_EXPIRE_S = 3600
+
+
+def make_cache_session(path: str) -> requests_cache.CachedSession:
+    """An HTTP cache in SQLite at `path` (requests-cache adds .sqlite), or in memory when that
+    can't be written, e.g. a read-only working directory in a container with a non-root user."""
+    try:
+        # requests-cache creates the directory and the table here, so a bad path fails now, not mid-request
+        return requests_cache.CachedSession(path, expire_after=CACHE_EXPIRE_S)
+    except (OSError, sqlite3.Error) as e:
+        log.warning("Weather cache: can't use %s (%s); caching in memory instead", path, e)
+        return requests_cache.CachedSession(backend="memory", expire_after=CACHE_EXPIRE_S)
+
+
+cache_session = make_cache_session(settings.weather_cache_path)
 retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
 openmeteo = openmeteo_requests.Client(session=retry_session)
 

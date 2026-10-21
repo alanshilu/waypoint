@@ -35,6 +35,10 @@ class Settings(BaseSettings):
         default="https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter",
         validation_alias="OVERPASS_URLS",
     )
+    # Open-Meteo responses are cached for an hour in SQLite here (".sqlite" is appended). Kept out of the
+    # working directory, which a non-root container can't write; if this can't be created either, the
+    # cache falls back to memory.
+    weather_cache_path: str = Field(default="/tmp/waypoint_weather_cache", validation_alias="WEATHER_CACHE_PATH")
     # Seconds to wait for one OpenRouteService directions request; long drives can take a minute when ORS is busy
     ors_route_timeout_s: float = Field(default=90.0, validation_alias="ORS_ROUTE_TIMEOUT_S")
 

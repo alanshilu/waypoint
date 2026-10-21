@@ -17,8 +17,9 @@ COPY alembic ./alembic
 COPY app ./app
 COPY docker-start.sh .
 
-# Non-root. /app itself stays writable for the weather HTTP cache (.cache.sqlite); the code stays root-owned.
-RUN useradd --create-home --uid 10001 waypoint && chown waypoint /app
+# Non-root, and /app stays root-owned: nothing writes there. The weather HTTP cache goes to
+# WEATHER_CACHE_PATH (default /tmp/waypoint_weather_cache), or to memory if that can't be written.
+RUN useradd --create-home --uid 10001 waypoint
 USER waypoint
 
 EXPOSE 8000
