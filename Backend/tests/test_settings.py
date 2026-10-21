@@ -62,3 +62,40 @@ def test_some_database_is_required(monkeypatch):
     monkeypatch.setenv("ORS_API_KEY", "k")
     with pytest.raises(ValidationError, match="Set DATABASE_URL, or DB_HOST"):
         Settings(_env_file=None)
+
+
+def neon_env(monkeypatch, pooled, direct):
+    for name in ("DB_HOST", "DB_USER", "DB_PASS", "DB_NAME"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ORS_API_KEY", "k")
+    for name, value in (("DATABASE_URL", pooled), ("DATABASE_URL_UNPOOLED", direct)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+
+
+def test_app_and_migrations_on_different_databases_refuse_to_start(monkeypatch):
+    # e.g. DATABASE_URL set for production while DATABASE_URL_UNPOOLED still comes from a dev branch's .env.local
+    neon_env(monkeypatch, NEON, "postgresql://u:p@ep-other.neon.tech/neondb?sslmode=require")
+    with pytest.raises(ValidationError, match="point at different databases"):
+        Settings(_env_file=None)
+    neon_env(monkeypatch, "postgresql://u:p@localhost:5432/waypoint", NEON_DIRECT)
+    with pytest.raises(ValidationError, match="point at different databases"):
+        Settings(_env_file=None)
+
+
+def test_pooled_and_direct_urls_of_one_database_are_accepted(monkeypatch):
+    neon_env(monkeypatch, NEON, NEON_DIRECT)
+    assert Settings(_env_file=None).migration_database_url.host == "ep-x.neon.tech"
+
+
+def test_without_database_url_migrations_follow_the_app(monkeypatch):
+    # DATABASE_URL commented out to use a local Postgres; the leftover direct URL must not take migrations elsewhere
+    for name, value in REQUIRED.items():
+        monkeypatch.setenv(name, value)
+    neon_env(monkeypatch, None, NEON_DIRECT)
+    for name, value in REQUIRED.items():
+        monkeypatch.setenv(name, value)
+    s = Settings(_env_file=None)
+    assert s.migration_database_url == s.database_url and s.database_url.host == "localhost"

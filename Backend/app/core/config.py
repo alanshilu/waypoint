@@ -89,6 +89,20 @@ class Settings(BaseSettings):
             raise ValueError(f"Set DATABASE_URL, or {', '.join(missing)}")
         return self
 
+    @model_validator(mode="after")
+    def _migrations_and_app_share_a_database(self):
+        # The two URLs can come from different places (an environment variable and .env.local, say).
+        # Pointing at different databases would migrate one and serve the other, so refuse to start.
+        if self.database_url_env and self.database_url_unpooled_env:
+            app_db = _database_identity(self.database_url_env)
+            migration_db = _database_identity(self.database_url_unpooled_env)
+            if app_db != migration_db:
+                raise ValueError(
+                    f"DATABASE_URL ({app_db[0]}/{app_db[1]}) and DATABASE_URL_UNPOOLED ({migration_db[0]}/"
+                    f"{migration_db[1]}) point at different databases; set both from the same branch, or neither"
+                )
+        return self
+
     # Backend/.env, plus the .env.local that `neon env pull` writes in the repo root.
     # Real environment variables (Render, docker-compose) override both.
     model_config = SettingsConfigDict(
@@ -119,10 +133,20 @@ class Settings(BaseSettings):
 
     @property
     def migration_database_url(self) -> URL:
-        """For Alembic: a direct connection, since Neon's pooler (transaction mode) drops session state."""
-        if self.database_url_unpooled_env:
+        """
+        For Alembic: a direct connection, since Neon's pooler (transaction mode) drops session state. Only
+        alongside DATABASE_URL: without it the app is on DB_*, and migrations must go there too.
+        """
+        if self.database_url_env and self.database_url_unpooled_env:
             return self._psycopg2(self.database_url_unpooled_env)
         return self.database_url
+
+
+def _database_identity(url: str) -> tuple[str, str]:
+    """(host, database), with Neon's "-pooler" suffix taken off the endpoint so pooled and direct match."""
+    parsed = make_url(url)
+    host = (parsed.host or "").replace("-pooler.", ".", 1)
+    return host, parsed.database or ""
 
 
 # Import this single instance anywhere you need config:
