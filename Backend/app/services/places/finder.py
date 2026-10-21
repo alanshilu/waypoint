@@ -8,6 +8,8 @@ help choose. ORS is the fallback.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from app.services.places import osm
 from app.services.places.cache import PlacesCache, cache_key
 from app.services.places.osm import FOOD_RADIUS_KM, FOOD_WIDE_RADIUS_KM, KM_PER_MILE, Search
@@ -18,15 +20,26 @@ UNAVAILABLE = {"stay": "Search for places to stay unavailable", "food": "Food se
 
 class PlacesFinder:
     """
-    Finds places with a main source, a fallback for when it's down, and a cache. Each is passed in, so
-    another source (or a fake, in tests) needs no change here. There is no deadline: a slow source is waited
-    for (the app tells the user it's still searching); only a failed one falls back.
+    Finds places with sources tried in order (Geoapify, then Overpass), a fallback for when they all fail, and a
+    cache. Each is passed in, so another source (or a fake, in tests) needs no change here. There is no deadline:
+    a slow source is waited for (the app tells the user it's still searching); only a failed one hands over.
     """
 
-    def __init__(self, source: PlaceSource, fallback: Fallback, cache: PlacesCache):
-        self.source = source
+    def __init__(self, sources: PlaceSource | Sequence[PlaceSource], fallback: Fallback, cache: PlacesCache):
+        self.sources = list(sources) if isinstance(sources, Sequence) else [sources]
         self.fallback = fallback
         self.cache = cache
+
+    def _search(self, searches: list[Search], food_radius_km: float) -> tuple[list[tuple[str, dict]], str]:
+        """(candidates, the name of the source that answered) from the first source that answers. Raises PlacesError."""
+        errors: list[PlacesError] = []
+        for source in self.sources:
+            try:
+                return osm.candidates(source.search(searches, food_radius_km)), source.name
+            except PlacesError as e:
+                errors.append(e)
+        # every source failed: one error naming each reason, a timeout if any was one
+        raise PlacesError("; ".join(str(e) for e in errors), timed_out=any(e.timed_out for e in errors))
 
     def find(self, points: list[dict]) -> list[dict]:
         """
@@ -35,9 +48,9 @@ class PlacesFinder:
             {"near", "kind", "lat", "lon", "radius_mi", "source", "places": [...], "note"?}
         each group's places ranked best first, at most PLACES_PER_GROUP.
 
-        One request to the source covers every search not already cached; food searches that find nothing
-        are repeated once out to FOOD_WIDE_RADIUS_KM. If the source fails, each search goes to the fallback
-        over a smaller area. Only complete answers from the source are cached.
+        The first source that answers covers every search not already cached; food searches that find nothing
+        are repeated once out to FOOD_WIDE_RADIUS_KM. If every source fails, each search goes to the fallback
+        over a smaller area. Only complete answers from a source are cached.
         """
         searches: list[Search] = list(dict.fromkeys((kind, p["lat"], p["lon"]) for p in points for kind in dict.fromkeys(p["kinds"])))
         missing_keys = set(self.cache.missing([cache_key(*s) for s in searches]))
@@ -47,7 +60,7 @@ class PlacesFinder:
 
         if missing:
             try:
-                found = osm.candidates(self.source.search(missing, FOOD_RADIUS_KM))
+                found, answered_by = self._search(missing, FOOD_RADIUS_KM)
             except PlacesError as e:
                 for kind, lat, lon in missing:
                     fresh[cache_key(kind, lat, lon)] = self._from_fallback(e, kind, lat, lon)
@@ -55,7 +68,7 @@ class PlacesFinder:
                 for kind, lat, lon in missing:
                     within = osm.radius_km(kind)
                     fresh[cache_key(kind, lat, lon)] = {"places": osm.ranked(found, kind, lat, lon, within),
-                                                       "source": self.source.name, "radius_km": within}
+                                                       "source": answered_by, "radius_km": within}
                 complete = self._widen_empty_food([s for s in missing if s[0] == "food"], fresh)
                 self.cache.put({cache_key(*s): fresh[cache_key(*s)] for s in missing if s[0] != "food" or complete})
 
@@ -82,7 +95,7 @@ class PlacesFinder:
         near_mi = round(FOOD_RADIUS_KM / KM_PER_MILE, 1)
         wide_mi = round(FOOD_WIDE_RADIUS_KM / KM_PER_MILE, 1)
         try:
-            found = osm.candidates(self.source.search(empty, FOOD_WIDE_RADIUS_KM))
+            found, answered_by = self._search(empty, FOOD_WIDE_RADIUS_KM)
         except PlacesError as e:
             for s in empty:
                 fresh[cache_key(*s)]["note"] = f"Nothing within {near_mi} mi; the wider search failed: {e}"
@@ -91,7 +104,7 @@ class PlacesFinder:
             places = osm.ranked(found, kind, lat, lon, FOOD_WIDE_RADIUS_KM)
             note = (f"Nothing within {near_mi} mi, so searched out to {wide_mi} mi" if places
                     else f"Nothing within {wide_mi} mi")
-            fresh[cache_key(kind, lat, lon)] = {"places": places, "source": self.source.name,
+            fresh[cache_key(kind, lat, lon)] = {"places": places, "source": answered_by,
                                                "radius_km": FOOD_WIDE_RADIUS_KM, "note": note}
         return True
 

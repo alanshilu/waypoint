@@ -124,7 +124,7 @@ export interface PlaceGroup {
   lat: number;
   lon: number;
   radius_mi: number;
-  /** openstreetmap, openrouteservice (fallback), none, or mock */
+  /** geoapify, openstreetmap (Overpass), openrouteservice (fallback), none, or mock */
   source: string;
   /** Why a search came back empty or smaller than usual */
   note?: string;

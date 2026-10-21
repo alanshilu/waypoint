@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     eval_judge_model: str = Field(default="claude-haiku-5-5", validation_alias="EVAL_JUDGE_MODEL")
     # The agent's tools call this API over HTTP
     api_base_url: str = Field(default="http://localhost:8000", validation_alias="API_BASE_URL")
-    # OpenStreetMap Overpass servers for campsites and places to eat, tried in order (comma-separated).
+    # Geoapify Places (OpenStreetMap data, hosted): the first source for places to stay and eat when set.
+    # Free plan: 3,000 credits a day (1 per 20 places), 5 requests a second; unset, Overpass is the first source.
+    geoapify_api_key: str | None = Field(default=None, validation_alias="GEOAPIFY_API_KEY")
+    # OpenStreetMap Overpass servers for places to stay and eat, tried in order (comma-separated).
     # Free public services with a fair-use policy; results are cached for a day.
     overpass_urls: str = Field(
         default="https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter",

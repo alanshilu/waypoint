@@ -29,7 +29,7 @@ def search_places(body: PlaceSearch, finder: PlacesFinder = Depends(get_places_f
     from OpenStreetMap, ranked by distance and by how much is known about each. One group per point and kind.
     """
     groups = finder.find([p.model_dump() for p in body.points])
-    return {
-        "groups": groups,
-        "attribution": "Place data © OpenStreetMap contributors (ODbL)",
-    }
+    attribution = "Place data © OpenStreetMap contributors (ODbL)"
+    if any(g["source"] == "geoapify" for g in groups):
+        attribution += " · Powered by Geoapify"  # its free plan asks for this where its results are shown
+    return {"groups": groups, "attribution": attribution}

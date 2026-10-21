@@ -99,6 +99,15 @@ export default function PlacesPanel({ groups, hovered, onHover }: Props) {
       </div>
       <p className="places-attribution">
         {groups.some((g) => g.source === "mock") ? "Mock data" : "Place data © OpenStreetMap contributors"}
+        {/* Geoapify's free plan asks for this link where its results are shown */}
+        {groups.some((g) => g.source === "geoapify") && (
+          <>
+            {" · "}
+            <a href="https://www.geoapify.com/" target="_blank" rel="noreferrer">
+              Powered by Geoapify
+            </a>
+          </>
+        )}
       </p>
     </section>
   );
