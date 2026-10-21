@@ -52,7 +52,7 @@ const initialState: State = {
   error: null,
 };
 
-const SOURCE: TurnSource = api.USE_MOCK ? "mock" : "agent";
+const SOURCE: TurnSource = api.capabilities.replies;
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -210,10 +210,10 @@ export function TripProvider({ children }: { children: ReactNode }) {
   // A route picked on the map since the last message; sent with the next one so the agent knows
   const pickedRouteId = useRef<number | null>(null);
 
-  // Restore the last trip after a reload (real mode; mock mode always starts empty)
+  // Restore the last trip after a reload, where the backend keeps trips
   const restored = useRef(false);
   useEffect(() => {
-    if (restored.current || api.USE_MOCK) return;
+    if (restored.current || !api.capabilities.restoresTrips) return;
     restored.current = true;
     const id = savedTripId();
     if (id === null) return;
@@ -233,7 +233,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
   // Keep the URL and local storage pointing at the current trip
   const tripId = state.trip?.id ?? null;
   useEffect(() => {
-    if (tripId !== null && !api.USE_MOCK) rememberTrip(tripId);
+    if (tripId !== null && api.capabilities.restoresTrips) rememberTrip(tripId);
   }, [tripId]);
 
   const selectRoute = useCallback((routeId: number) => {
@@ -242,7 +242,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "ROUTE_SELECTED", routeId });
     pickedRouteId.current = routeId;
     // In the public demo only the agent writes routes; the pick reaches it with the next message
-    if (api.PUBLIC_DEMO && !api.USE_MOCK) return;
+    if (!api.capabilities.savesRoutePicks) return;
     api.selectRoute(routeId).catch((error: unknown) => {
       pickedRouteId.current = null;
       dispatch({ type: "ROUTE_SELECTED", routeId: previous });

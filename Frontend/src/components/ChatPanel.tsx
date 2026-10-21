@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { USE_MOCK } from "../api";
+import { capabilities } from "../api";
+
+// The scripted mock answers from fixtures; only the real agent takes the user's own Anthropic key
+const MOCK_REPLIES = capabilities.replies === "mock";
 import { useTrip } from "../state/TripProvider";
 import type { StepView } from "../types";
 import OwnKeyPanel from "./OwnKeyPanel";
@@ -80,8 +83,8 @@ export default function ChatPanel() {
       <header className="chat-head">
         <span className="brand">Waypoint</span>
         <span className="chat-head-side">
-          {!USE_MOCK && <OwnKeyPanel />}
-          <span className={USE_MOCK ? "mode-badge mock" : "mode-badge"}>{USE_MOCK ? "Mock data" : "Live API"}</span>
+          {!MOCK_REPLIES && <OwnKeyPanel />}
+          <span className={MOCK_REPLIES ? "mode-badge mock" : "mode-badge"}>{MOCK_REPLIES ? "Mock data" : "Live API"}</span>
         </span>
       </header>
       <ServerWaking />
