@@ -27,11 +27,11 @@ export function compare(trip: Trip): string {
 /** Suggested next messages after a scripted reply. */
 export function followUps(trip: Trip, selectedRouteId: number | null): string[] {
   const selects = trip.routes.filter((r) => r.id !== selectedRouteId).map((r) => `Select ${r.route_type}`);
-  return [...selects, "Weather at destination", "Stops near destination", "Stops along the route", "Where to camp and eat"];
+  return [...selects, "Weather at destination", "Stops near destination", "Stops along the route", "Where to stay and eat"];
 }
 
 /** Suggested next messages after a reply from the backend agent. */
 export function agentChips(trip: Trip): string[] {
   const selects = trip.routes.filter((r) => r.id !== trip.selected_route_id).map((r) => `Select ${r.route_type}`);
-  return [...selects, "Where should I stop overnight?", "Where can we camp and eat?", "What's the weather when I arrive?"];
+  return [...selects, "Where should I stop overnight?", "Where can we stay and eat?", "What's the weather when I arrive?"];
 }

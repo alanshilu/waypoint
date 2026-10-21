@@ -61,7 +61,7 @@ export function createMockBackend(): BackendApi {
         kind,
         lat: point.lat,
         lon: point.lon,
-        radius_mi: kind === "camping" ? 15.5 : 3.1,
+        radius_mi: kind === "stay" ? 15.5 : 3.1,
         source: "mock",
         places: placesFixture[kind]
           .map((t, i) => {

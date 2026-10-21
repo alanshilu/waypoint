@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { placeGlyph } from "../placeGlyph";
 import type { PlaceGroup, PlaceOption } from "../types";
 
 interface Props {
@@ -10,9 +11,10 @@ interface Props {
 // Alternatives shown under each pick before "+N more"
 const ALTERNATIVES = 2;
 
-const KIND_HEADING = { camping: "Camp", food: "Eat" } as const;
+const KIND_HEADING = { stay: "Stay", food: "Eat" } as const;
+const KIND_NONE = { stay: "places to stay", food: "places to eat" } as const;
 
-/** The agent's campsite and food picks per stop, with the other options found, as a list beside the map. */
+/** The agent's picks of where to stay and eat per stop, with the other options found, as a list beside the map. */
 export default function PlacesPanel({ groups, hovered, onHover }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -31,7 +33,7 @@ export default function PlacesPanel({ groups, hovered, onHover }: Props) {
       onMouseEnter={() => onHover(place.id)}
       onMouseLeave={() => onHover(null)}
     >
-      <span className={`place-glyph ${place.kind}`} aria-hidden="true" />
+      <span className={`place-glyph ${placeGlyph(place)}`} aria-hidden="true" />
       <span className="place-name">
         {place.recommended && <span className="sr-only">Recommended: </span>}
         {place.name}
@@ -45,8 +47,8 @@ export default function PlacesPanel({ groups, hovered, onHover }: Props) {
   );
 
   return (
-    <section className="places-panel" aria-label="Where to camp and eat">
-      <h2>Where to camp and eat</h2>
+    <section className="places-panel" aria-label="Where to stay and eat">
+      <h2>Where to stay and eat</h2>
       <div className="places-scroll">
         {sections.map((section) => (
           <div key={section.label} className="places-section">
@@ -64,8 +66,7 @@ export default function PlacesPanel({ groups, hovered, onHover }: Props) {
                   {group.places.length > 0 && group.note && <p className="places-note">{group.note}</p>}
                   {group.places.length === 0 ? (
                     <p className="places-empty">
-                      {group.note ??
-                        `No ${group.kind === "camping" ? "campsites" : "places to eat"} found within ${group.radius_mi} mi.`}
+                      {group.note ?? `No ${KIND_NONE[group.kind]} found within ${group.radius_mi} mi.`}
                     </p>
                   ) : (
                     <ul>

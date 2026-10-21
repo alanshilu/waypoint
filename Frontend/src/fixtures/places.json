@@ -1,10 +1,12 @@
 {
-  "_comment": "MOCK DATA. Invented campsites and places to eat, placed at fixed offsets (degrees) around whatever point mock mode searches. Nothing here came from OpenStreetMap.",
-  "camping": [
-    { "name": "Pine Hollow Campground", "category": "camp_site", "dlat": 0.04, "dlon": 0.05, "facts": ["tents allowed", "RVs allowed", "toilets", "showers", "drinking water", "fee", "reservations: recommended"] },
+  "_comment": "MOCK DATA. Invented places to stay and to eat, placed at fixed offsets (degrees) around whatever point mock mode searches. Nothing here came from OpenStreetMap.",
+  "stay": [
+    { "name": "Pine Hollow Campground", "category": "camp_site", "dlat": 0.04, "dlon": 0.05, "facts": ["campground", "tents allowed", "RVs allowed", "toilets", "showers", "drinking water", "fee", "reservations: recommended"] },
+    { "name": "Desert Rose Motel", "category": "motel", "dlat": 0.006, "dlon": -0.004, "facts": ["motel", "wifi", "pets allowed"] },
     { "name": "Creekside RV Park", "category": "caravan_site", "dlat": -0.02, "dlon": 0.03, "facts": ["RV park", "toilets", "showers", "power hookups", "fee"] },
-    { "name": "Oak Flat Camp", "category": "camp_site", "dlat": 0.09, "dlon": -0.06, "facts": ["tents allowed", "toilets", "free", "reservations: no"] },
-    { "name": "Ridge Top Campground", "category": "camp_site", "dlat": -0.11, "dlon": -0.08, "facts": ["tents allowed", "drinking water", "fee"] }
+    { "name": "The Junction Hotel", "category": "hotel", "dlat": -0.012, "dlon": 0.01, "facts": ["hotel", "3 stars", "64 rooms", "wifi"] },
+    { "name": "Oak Flat Camp", "category": "camp_site", "dlat": 0.09, "dlon": -0.06, "facts": ["campground", "tents allowed", "toilets", "free", "reservations: no"] },
+    { "name": "Ridge Top Campground", "category": "camp_site", "dlat": -0.11, "dlon": -0.08, "facts": ["campground", "tents allowed", "drinking water", "fee"] }
   ],
   "food": [
     { "name": "Main Street Diner", "category": "restaurant", "dlat": 0.004, "dlon": 0.006, "facts": ["restaurant", "american", "hours: Mo-Su 07:00-21:00", "vegetarian options"] },

@@ -19,13 +19,15 @@ def find_places(points: list[dict]) -> dict:
 TOOL_SCHEMA = {
     "name": "find_places",
     "description": (
-        "Finds campsites (within about 15 miles) and places to eat (within about 3 miles, or 12 when nothing is "
-        "closer; the group's radius_mi and note say which) near points on the trip, "
-        "from OpenStreetMap. One call takes every point: each overnight stop from plan_stops with kinds "
-        "['camping', 'food'], and each lunch stop from plan_stops (lunch_stops) with kinds ['food']. Returns one "
-        "group per point and kind, its places ranked best first, each with an id, name, distance_mi from the point "
-        "and facts taken from OpenStreetMap (toilets, showers, tents allowed, fee, cuisine, hours...). A group may "
-        "be empty, or carry a note when the search was unavailable."
+        "Finds places to stay (kind 'stay', within about 15 miles: campgrounds, RV parks, hotels, motels, guest "
+        "houses, hostels, cabins and vacation rentals) and places to eat (kind 'food', within about 3 miles, or 12 "
+        "when nothing is closer; the group's radius_mi and note say which) near points on the trip, from "
+        "OpenStreetMap. One call takes every point: each overnight stop from plan_stops with kinds "
+        "['stay', 'food'], and each lunch stop from plan_stops (lunch_stops) with kinds ['food']. Returns one "
+        "group per point and kind, its places ranked best first, each with an id, name, category (camp_site, "
+        "motel, hotel...), distance_mi from the point and facts taken from OpenStreetMap (its type first, then "
+        "e.g. toilets, showers, tents allowed, brand, stars, wifi, cuisine, hours). A group may be empty, or carry "
+        "a note when the search was unavailable."
     ),
     "strict": True,
     "input_schema": {
@@ -39,7 +41,7 @@ TOOL_SCHEMA = {
                         "near": {"type": "string", "description": "The plan_stops stop id or lunch_stops id"},
                         "lat": {"type": "number"},
                         "lon": {"type": "number"},
-                        "kinds": {"type": "array", "items": {"type": "string", "enum": ["camping", "food"]}},
+                        "kinds": {"type": "array", "items": {"type": "string", "enum": ["stay", "food"]}},
                     },
                     "required": ["near", "lat", "lon", "kinds"],
                     "additionalProperties": False,

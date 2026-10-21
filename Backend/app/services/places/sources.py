@@ -25,15 +25,15 @@ class PlaceSource(Protocol):
     name: str
 
     def search(self, searches: list[Search], food_radius_km: float) -> list[dict]:
-        """Elements near each (kind, lat, lon): campsites within the camping radius, food within food_radius_km."""
+        """Elements near each (kind, lat, lon): places to stay within the stay radius, food within food_radius_km."""
         ...
 
 
-class FoodFallback(Protocol):
-    """Where food comes from when the main source is down; campsites have no fallback."""
+class Fallback(Protocol):
+    """Where places come from when the main source is down: one kind, one point at a time."""
 
     name: str
 
-    def search(self, lat: float, lon: float) -> tuple[list[dict], float]:
-        """Food elements near the point, and the radius (km) that was searched. May raise any exception."""
+    def search(self, kind: str, lat: float, lon: float) -> tuple[list[dict], float]:
+        """Elements of this kind near the point, and the radius (km) that was searched. May raise any exception."""
         ...

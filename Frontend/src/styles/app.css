@@ -1442,7 +1442,8 @@ button:disabled {
   stroke-width: 1.5;
 }
 
-.place-marker.camping path {
+/* places to stay: tents (campgrounds) and houses (hotels, motels...) share a colour */
+.place-marker.stay path {
   stroke: var(--olive);
 }
 
@@ -1450,8 +1451,8 @@ button:disabled {
   stroke: var(--rust);
 }
 
-.place-marker.picked.camping path,
-.place-marker.active.camping path {
+.place-marker.picked.stay path,
+.place-marker.active.stay path {
   fill: var(--olive);
   stroke: var(--parchment-light);
 }
@@ -1548,10 +1549,17 @@ button:disabled {
   border: 1.5px solid;
 }
 
-.place-glyph.camping {
+.place-glyph.camp {
   border: 0;
   background: var(--olive);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+/* a house: a hotel, motel or other room */
+.place-glyph.room {
+  border: 0;
+  background: var(--olive);
+  clip-path: polygon(50% 0, 100% 42%, 100% 100%, 0 100%, 0 42%);
 }
 
 .place-glyph.food {

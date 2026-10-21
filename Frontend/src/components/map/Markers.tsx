@@ -1,4 +1,5 @@
 import type { GeoProjection } from "d3-geo";
+import { placeGlyph } from "../../placeGlyph";
 import type { Place, PlaceOption, PoiResult } from "../../types";
 
 export const shortName = (place: Place) => place.name.split(",")[0];
@@ -31,7 +32,7 @@ interface PlaceProps {
   onHover: (id: string | null) => void;
 }
 
-/** Campsites (tents) and places to eat (dots); the agent's picks larger and named. */
+/** Places to stay (a tent for campgrounds, a house for hotels and motels) and to eat (dots); picks larger and named. */
 export function PlaceMarkers({ places, projection, hovered, onHover }: PlaceProps) {
   return (
     <>
@@ -40,24 +41,31 @@ export function PlaceMarkers({ places, projection, hovered, onHover }: PlaceProp
         if (!xy) return null;
         const [x, y] = xy;
         const size = place.recommended ? 8 : 5;
-        const classes = ["place-marker", place.kind];
+        const glyph = placeGlyph(place);
+        const classes = ["place-marker", place.kind, glyph];
         if (place.recommended) classes.push("picked");
         if (hovered === place.id) classes.push("active");
+        const stay = place.kind === "stay";
         return (
           <g key={place.id} className={classes.join(" ")} onMouseEnter={() => onHover(place.id)} onMouseLeave={() => onHover(null)}>
             <title>{[place.name, ...(place.reason ? [place.reason] : place.facts.slice(0, 3))].join(" · ")}</title>
-            {place.kind === "camping" ? (
+            {glyph === "camp" ? (
               // a tent
               <path d={`M${x} ${y - size}L${x + size} ${y + size * 0.8}L${x - size} ${y + size * 0.8}Z`} />
+            ) : glyph === "room" ? (
+              // a house: walls and a pitched roof
+              <path
+                d={`M${x} ${y - size}L${x + size} ${y - size * 0.15}V${y + size * 0.8}H${x - size}V${y - size * 0.15}Z`}
+              />
             ) : (
               <circle cx={x} cy={y} r={size * 0.8} />
             )}
-            {/* a night's campsite and dinner picks sit close together: name tents on the right, food on the left */}
+            {/* a night's place to stay and dinner picks sit close together: name the stay on the right, food on the left */}
             {(place.recommended || hovered === place.id) && (
               <text
-                x={place.kind === "camping" ? x + size + 4 : x - size - 4}
+                x={stay ? x + size + 4 : x - size - 4}
                 y={y}
-                textAnchor={place.kind === "camping" ? "start" : "end"}
+                textAnchor={stay ? "start" : "end"}
                 dominantBaseline="middle"
               >
                 {place.name}

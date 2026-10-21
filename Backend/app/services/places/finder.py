@@ -1,8 +1,9 @@
 """
-Campsites and places to eat near a trip's stops. OpenRouteService's POI search is capped at about 50 km²
-per request (a ~3.5 km box), which rarely reaches a campsite from an overnight stop, so the main source is
-OpenStreetMap: the same data, searched within CAMPING_RADIUS_KM / FOOD_RADIUS_KM of each point, with the
-tags that help choose.
+Places to stay (campgrounds, RV parks, hotels, motels, guest houses, hostels, cabins, rentals) and to eat
+near a trip's stops. OpenRouteService's POI search is capped at about 50 km² per request (a ~3.5 km box),
+which rarely reaches a campground from an overnight stop, so the main source is OpenStreetMap: the same data
+(ORS's POIs come from it), searched within STAY_RADIUS_KM / FOOD_RADIUS_KM of each point, with the tags that
+help choose. ORS is the fallback.
 """
 
 from __future__ import annotations
@@ -10,31 +11,33 @@ from __future__ import annotations
 from app.services.places import osm
 from app.services.places.cache import PlacesCache, cache_key
 from app.services.places.osm import FOOD_RADIUS_KM, FOOD_WIDE_RADIUS_KM, KM_PER_MILE, Search
-from app.services.places.sources import FoodFallback, PlaceSource, PlacesError
+from app.services.places.sources import Fallback, PlaceSource, PlacesError
+
+UNAVAILABLE = {"stay": "Search for places to stay unavailable", "food": "Food search unavailable"}
 
 
 class PlacesFinder:
     """
-    Finds places with a main source, a food fallback for when it's down, and a cache. Each is passed in, so
+    Finds places with a main source, a fallback for when it's down, and a cache. Each is passed in, so
     another source (or a fake, in tests) needs no change here. There is no deadline: a slow source is waited
     for (the app tells the user it's still searching); only a failed one falls back.
     """
 
-    def __init__(self, source: PlaceSource, food_fallback: FoodFallback, cache: PlacesCache):
+    def __init__(self, source: PlaceSource, fallback: Fallback, cache: PlacesCache):
         self.source = source
-        self.food_fallback = food_fallback
+        self.fallback = fallback
         self.cache = cache
 
     def find(self, points: list[dict]) -> list[dict]:
         """
-        points: [{"near": label, "lat", "lon", "kinds": ["camping", "food"]}].
+        points: [{"near": label, "lat", "lon", "kinds": ["stay", "food"]}].
         Returns one group per (point, kind):
             {"near", "kind", "lat", "lon", "radius_mi", "source", "places": [...], "note"?}
         each group's places ranked best first, at most PLACES_PER_GROUP.
 
         One request to the source covers every search not already cached; food searches that find nothing
-        are repeated once out to FOOD_WIDE_RADIUS_KM. If the source fails, food comes from the fallback and
-        campsites come back empty with a note. Only complete answers are cached.
+        are repeated once out to FOOD_WIDE_RADIUS_KM. If the source fails, each search goes to the fallback
+        over a smaller area. Only complete answers from the source are cached.
         """
         searches: list[Search] = list(dict.fromkeys((kind, p["lat"], p["lon"]) for p in points for kind in dict.fromkeys(p["kinds"])))
         missing_keys = set(self.cache.missing([cache_key(*s) for s in searches]))
@@ -47,31 +50,26 @@ class PlacesFinder:
                 found = osm.candidates(self.source.search(missing, FOOD_RADIUS_KM))
             except PlacesError as e:
                 for kind, lat, lon in missing:
-                    fresh[cache_key(kind, lat, lon)] = (self._unavailable(e) if kind == "camping"
-                                                        else self._food_from_fallback(e, lat, lon))
+                    fresh[cache_key(kind, lat, lon)] = self._from_fallback(e, kind, lat, lon)
             else:
                 for kind, lat, lon in missing:
                     within = osm.radius_km(kind)
                     fresh[cache_key(kind, lat, lon)] = {"places": osm.ranked(found, kind, lat, lon, within),
                                                        "source": self.source.name, "radius_km": within}
                 complete = self._widen_empty_food([s for s in missing if s[0] == "food"], fresh)
-                self.cache.put({cache_key(*s): fresh[cache_key(*s)] for s in missing if s[0] == "camping" or complete})
+                self.cache.put({cache_key(*s): fresh[cache_key(*s)] for s in missing if s[0] != "food" or complete})
 
         return [self._group(p, kind, fresh) for p in points for kind in dict.fromkeys(p["kinds"])]
 
-    @staticmethod
-    def _unavailable(error: PlacesError) -> dict:
-        return {"places": [], "source": "none", "note": f"Campsite search unavailable: {error}"}
-
-    def _food_from_fallback(self, error: PlacesError, lat: float, lon: float) -> dict:
+    def _from_fallback(self, error: PlacesError, kind: str, lat: float, lon: float) -> dict:
         try:
-            elements, within = self.food_fallback.search(lat, lon)
-            return {"places": osm.ranked(osm.candidates(elements), "food", lat, lon, within),
-                    "source": self.food_fallback.name, "radius_km": within,
+            elements, within = self.fallback.search(kind, lat, lon)
+            return {"places": osm.ranked(osm.candidates(elements), kind, lat, lon, within),
+                    "source": self.fallback.name, "radius_km": within,
                     "note": f"{error}; searched a smaller area ({within / KM_PER_MILE:.1f} mi) instead"}
         except Exception as fallback:  # noqa: BLE001 - reported in the note
             return {"places": [], "source": "none",
-                    "note": f"Food search unavailable: {error}; fallback failed: {fallback}"}
+                    "note": f"{UNAVAILABLE[kind]}: {error}; fallback failed: {fallback}"}
 
     def _widen_empty_food(self, food_searches: list[Search], fresh: dict) -> bool:
         """

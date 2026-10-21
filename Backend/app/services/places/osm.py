@@ -1,5 +1,5 @@
 """
-What a campsite or place to eat is in OpenStreetMap, and how they're ranked. Pure functions over
+What a place to stay or a place to eat is in OpenStreetMap, and how they're ranked. Pure functions over
 OSM-shaped elements ({"type", "id", "lat"/"lon" or "center", "tags"}), whichever source found them.
 Everything a place says about itself (facts) comes from its tags; nothing is inferred.
 """
@@ -8,16 +8,26 @@ from __future__ import annotations
 
 import math
 
-CAMPING_RADIUS_KM = 25.0  # about 15 miles: a short drive off the route at the end of the day
+STAY_RADIUS_KM = 25.0  # about 15 miles: a short drive off the route at the end of the day
 FOOD_RADIUS_KM = 5.0
 # Overnight and lunch points on backroads are often far from a town: food searches that find nothing
 # within FOOD_RADIUS_KM are repeated once out to this radius (about 12 miles)
 FOOD_WIDE_RADIUS_KM = 20.0
 PLACES_PER_GROUP = 6
 
-KINDS = ("camping", "food")
-CAMPING_TAGS = ("camp_site", "caravan_site")  # tourism=*
+KINDS = ("stay", "food")
+# Places to stay (tourism=*): OpenRouteService's accommodation categories, the same OSM tags, less the
+# hike-in alpine and wilderness huts a road trip can't drive to
+CAMP_TAGS = ("camp_site", "caravan_site")
+ROOM_TAGS = ("hotel", "motel", "guest_house", "hostel", "chalet", "apartment")
+STAY_TAGS = CAMP_TAGS + ROOM_TAGS
 FOOD_TAGS = ("restaurant", "fast_food", "cafe", "food_court")  # amenity=*
+
+# How each place to stay is described: its first fact
+STAY_LABELS = {
+    "camp_site": "campground", "caravan_site": "RV park", "hotel": "hotel", "motel": "motel",
+    "guest_house": "guest house", "hostel": "hostel", "chalet": "cabin", "apartment": "vacation rental",
+}
 
 KM_PER_MILE = 1.609344
 
@@ -26,7 +36,7 @@ Search = tuple[str, float, float]
 
 
 def radius_km(kind: str) -> float:
-    return CAMPING_RADIUS_KM if kind == "camping" else FOOD_RADIUS_KM
+    return STAY_RADIUS_KM if kind == "stay" else FOOD_RADIUS_KM
 
 
 def km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -38,8 +48,8 @@ def km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def kind_of(tags: dict) -> str | None:
-    if tags.get("tourism") in CAMPING_TAGS:
-        return "camping"
+    if tags.get("tourism") in STAY_TAGS:
+        return "stay"
     if tags.get("amenity") in FOOD_TAGS:
         return "food"
     return None
@@ -63,30 +73,13 @@ def _yes(tags: dict, key: str) -> bool:
 def facts_of(kind: str, tags: dict) -> list[str]:
     """Short facts, each straight from an OSM tag, that help a traveller choose."""
     facts: list[str] = []
-    if kind == "camping":
-        if tags.get("tourism") == "caravan_site":
-            facts.append("RV park")
-        if _yes(tags, "tents"):
-            facts.append("tents allowed")
-        elif tags.get("tents") == "no":
-            facts.append("no tents")
-        if _yes(tags, "caravans") and tags.get("tourism") != "caravan_site":
-            facts.append("RVs allowed")
-        if _yes(tags, "toilets"):
-            facts.append("toilets")
-        if _yes(tags, "shower") or _yes(tags, "showers"):
-            facts.append("showers")
-        if _yes(tags, "drinking_water"):
-            facts.append("drinking water")
-        if tags.get("power_supply") == "yes":
-            facts.append("power hookups")
-        if tags.get("fee") == "no":
-            facts.append("free")
-        elif tags.get("fee") == "yes":
-            facts.append("fee")
-        if tags.get("reservation") in ("required", "recommended", "yes", "no"):
-            facts.append(f"reservations: {tags['reservation']}")
-        if tags.get("operator"):
+    if kind == "stay":
+        facts.append(STAY_LABELS.get(tags.get("tourism", ""), ""))
+        if tags.get("tourism") in CAMP_TAGS:
+            facts += _camp_facts(tags)
+        else:
+            facts += _room_facts(tags)
+        if tags.get("operator") and tags.get("operator") != tags.get("brand"):
             facts.append(f"run by {tags['operator']}")
     else:
         facts.append(tags.get("amenity", "").replace("_", " "))
@@ -105,13 +98,60 @@ def facts_of(kind: str, tags: dict) -> list[str]:
     return [f for f in facts if f]
 
 
+def _camp_facts(tags: dict) -> list[str]:
+    """Campgrounds and RV parks."""
+    facts: list[str] = []
+    if _yes(tags, "tents"):
+        facts.append("tents allowed")
+    elif tags.get("tents") == "no":
+        facts.append("no tents")
+    if _yes(tags, "caravans") and tags.get("tourism") != "caravan_site":
+        facts.append("RVs allowed")
+    if _yes(tags, "toilets"):
+        facts.append("toilets")
+    if _yes(tags, "shower") or _yes(tags, "showers"):
+        facts.append("showers")
+    if _yes(tags, "drinking_water"):
+        facts.append("drinking water")
+    if tags.get("power_supply") == "yes":
+        facts.append("power hookups")
+    if tags.get("fee") == "no":
+        facts.append("free")
+    elif tags.get("fee") == "yes":
+        facts.append("fee")
+    if tags.get("reservation") in ("required", "recommended", "yes", "no"):
+        facts.append(f"reservations: {tags['reservation']}")
+    return facts
+
+
+def _room_facts(tags: dict) -> list[str]:
+    """Hotels, motels, guest houses, hostels, cabins and rentals."""
+    facts: list[str] = []
+    if tags.get("brand"):
+        facts.append(tags["brand"])
+    if tags.get("stars", "").isdigit():
+        facts.append(f"{tags['stars']} stars")
+    if tags.get("rooms", "").isdigit():
+        facts.append(f"{tags['rooms']} rooms")
+    if tags.get("internet_access") in ("wlan", "yes"):
+        facts.append("wifi")
+    if tags.get("dog") in ("yes", "leashed") or tags.get("pets") == "yes":
+        facts.append("pets allowed")
+    if _yes(tags, "wheelchair"):
+        facts.append("wheelchair accessible")
+    return facts
+
+
 def _score(kind: str, distance_mi: float, tags: dict) -> float:
     """Lower is better: distance, less a little for each fact that makes the choice easier to trust."""
     known = 0
-    if kind == "camping":
+    if kind == "stay" and tags.get("tourism") in CAMP_TAGS:
         known += sum(_yes(tags, k) for k in ("toilets", "drinking_water", "shower"))
         known += 1 if tags.get("website") or tags.get("reservation") else 0
         return distance_mi - 0.75 * known
+    if kind == "stay":
+        known += sum(1 for k in ("website", "brand", "stars", "phone") if tags.get(k))
+        return distance_mi - 0.4 * known
     known += 1 if tags.get("opening_hours") else 0
     known += 1 if tags.get("cuisine") else 0
     return distance_mi - 0.3 * known
@@ -125,7 +165,7 @@ def to_place(element: dict, kind: str, lat: float, lon: float) -> dict:
     place = {
         "id": f"osm:{element['type']}/{element['id']}",
         "kind": kind,
-        "category": tags.get("tourism") if kind == "camping" else tags.get("amenity"),
+        "category": tags.get("tourism") if kind == "stay" else tags.get("amenity"),
         "name": tags["name"],
         "lat": round(plat, 5),
         "lon": round(plon, 5),
@@ -156,8 +196,17 @@ def candidates(elements: list[dict]) -> list[tuple[str, dict]]:
 
 
 def ranked(found: list[tuple[str, dict]], kind: str, lat: float, lon: float, within_km: float) -> list[dict]:
-    """The best PLACES_PER_GROUP places of this kind within within_km of the point."""
+    """
+    The best PLACES_PER_GROUP places of this kind within within_km of the point. For places to stay, the best
+    campground and the best room (hotel, motel...) both make the list when there are any, so a town full of
+    hotels doesn't crowd out the campsites, nor the other way round.
+    """
     places = [to_place(e, k, lat, lon) for k, e in found if k == kind]
     places = [p for p in places if p["distance_mi"] * KM_PER_MILE <= within_km + 0.05]
     places.sort(key=lambda p: p["_score"])
-    return places[:PLACES_PER_GROUP]
+    if kind != "stay":
+        return places[:PLACES_PER_GROUP]
+    best_of_each = [next((p for p in places if (p["category"] in CAMP_TAGS) == camp), None) for camp in (True, False)]
+    picked = [p for p in best_of_each if p]
+    rest = [p for p in places if p not in picked]
+    return sorted(picked + rest[:PLACES_PER_GROUP - len(picked)], key=lambda p: p["_score"])

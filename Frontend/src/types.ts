@@ -88,13 +88,17 @@ export interface PoiResult {
   items: Poi[];
 }
 
-export type PlaceKind = "camping" | "food";
+/** stay: anywhere to spend the night, from campgrounds to hotels */
+export type PlaceKind = "stay" | "food";
 
-/** A campsite or place to eat from find_places (OpenStreetMap). */
+/** A place to stay or eat from find_places (OpenStreetMap). */
 export interface PlaceOption {
   id: string;
   kind: PlaceKind;
-  /** camp_site, caravan_site, restaurant, fast_food, cafe, food_court */
+  /**
+   * stay: camp_site, caravan_site, hotel, motel, guest_house, hostel, chalet, apartment;
+   * food: restaurant, fast_food, cafe, food_court
+   */
   category: string;
   name: string;
   lat: number;

@@ -1,6 +1,7 @@
 import type { BackendApi, PlacePoint } from "../api/contract";
 import { routeLabel } from "../format";
 import { buildMileIndex, pointAtMile } from "../geo";
+import { placeGlyph } from "../placeGlyph";
 import type { AgentTurnResult, CacheStatus, StepView, Trip } from "../types";
 import type { AgentRunner } from "./runner";
 import { compare, describe, followUps, shortName } from "./text";
@@ -85,7 +86,8 @@ export function createScriptedAgent(
         // An explicit "from X to Y" always plans; a bare "X to Y" only does when
         // the message is not a follow-up question about the current trip.
         const explicit = text.match(/\bfrom\s+(.+?)\s+to\s+(.+?)[.?!]*$/i);
-        const isFollowUp = !!trip && /weather|forecast|rain|temperature|stop|poi|food|eat|fuel|gas|coffee|near/.test(lower);
+        const isFollowUp =
+          !!trip && /weather|forecast|rain|temperature|stop|poi|food|eat|fuel|gas|coffee|near|camp|stay|hotel|motel|sleep|lodging/.test(lower);
         const match = explicit ?? (isFollowUp ? null : text.match(/^(?:plan\s+)?(.+?)\s+to\s+(.+?)[.?!]*$/i));
         if (match) {
           const [origin] = await step("geocode_location", () => backend.searchLocation(match[1]));
@@ -139,9 +141,10 @@ export function createScriptedAgent(
           });
         }
 
-        // Campsites and food: like the agent, around a night's stop (here: halfway along the route) and a
-        // lunch point (a quarter of the way), with one pick per group
-        if (/\bcamp|campsite|campground|\blunch\b|\bdinner\b/.test(lower)) {
+        // Places to stay and food: like the agent, around a night's stop (here: halfway along the route) and a
+        // lunch point (a quarter of the way), with one pick per group. A place to stay follows what was asked
+        // for (camping, or a hotel or motel), else it's the nearest of any kind.
+        if (/\bcamp|campsite|campground|\bstay\b|\bhotel|\bmotel|\blodging|\bsleep|\blunch\b|\bdinner\b/.test(lower)) {
           if (!trip) return finish(NO_TRIP);
           const route = trip.routes.find((r) => r.id === selectedRouteId) ?? trip.routes[0];
           const index = buildMileIndex(route.geometry, route.distance_miles);
@@ -149,22 +152,28 @@ export function createScriptedAgent(
           const [nightLon, nightLat] = at(0.5);
           const [lunchLon, lunchLat] = at(0.25);
           const points: PlacePoint[] = [
-            { near: "night-1", label: `Night 1 · halfway along the ${route.route_type} route`, lat: nightLat, lon: nightLon, kinds: ["camping", "food"] },
+            { near: "night-1", label: `Night 1 · halfway along the ${route.route_type} route`, lat: nightLat, lon: nightLon, kinds: ["stay", "food"] },
             { near: "lunch-1", label: `Lunch, day 1 · a quarter of the way`, lat: lunchLat, lon: lunchLon, kinds: ["food"] },
           ];
+          const wants = /\bcamp|campsite|campground/.test(lower) ? "camp" : /\bhotel|\bmotel/.test(lower) ? "room" : null;
           const found = await step("find_places", () => backend.findPlaces(points));
-          const places = found.map((group) => ({
-            ...group,
-            places: group.places.map((place, i) => ({
-              ...place,
-              recommended: i === 0,
-              reason: i === 0 ? `${place.distance_mi} mi from the stop, ${place.facts.slice(0, 2).join(", ")}` : null,
-            })),
-          }));
+          const places = found.map((group) => {
+            // the first place of the wanted kind, else the nearest (the groups come nearest first)
+            const preferred = group.kind === "stay" && wants ? group.places.findIndex((p) => placeGlyph(p) === wants) : -1;
+            const chosen = preferred >= 0 ? preferred : 0;
+            return {
+              ...group,
+              places: group.places.map((place, i) => ({
+                ...place,
+                recommended: i === chosen,
+                reason: i === chosen ? `${place.distance_mi} mi from the stop, ${place.facts.slice(0, 2).join(", ")}` : null,
+              })),
+            };
+          });
           const pick = (near: string, kind: string) =>
-            places.find((g) => g.near === near && g.kind === kind)?.places[0]?.name ?? "nothing found";
+            places.find((g) => g.near === near && g.kind === kind)?.places.find((p) => p.recommended)?.name ?? "nothing found";
           return finish(
-            `For night 1, camp at ${pick("night-1", "camping")} and eat at ${pick("night-1", "food")}; ` +
+            `For night 1, stay at ${pick("night-1", "stay")} and eat at ${pick("night-1", "food")}; ` +
               `for lunch, ${pick("lunch-1", "food")}. Every option is on the map and in the list.`,
             { state_changed: ["places"], places, chips: followUps(trip, selectedRouteId) },
           );

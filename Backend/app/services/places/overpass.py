@@ -12,7 +12,7 @@ from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from urllib import error, parse, request
 
-from app.services.places.osm import CAMPING_RADIUS_KM, CAMPING_TAGS, FOOD_RADIUS_KM, FOOD_TAGS, Search
+from app.services.places.osm import FOOD_RADIUS_KM, FOOD_TAGS, STAY_RADIUS_KM, STAY_TAGS, Search
 from app.services.places.sources import PlacesError
 
 # Public Overpass servers swing between answering in seconds and taking minutes. A search waits for them:
@@ -39,8 +39,8 @@ def build_query(searches: list[Search], food_radius_km: float = FOOD_RADIUS_KM, 
     """One Overpass QL query for every (kind, lat, lon) search; boxes, trimmed to the radius afterwards."""
     parts = []
     for kind, lat, lon in searches:
-        if kind == "camping":
-            parts.append(f'nwr["tourism"~"^({"|".join(CAMPING_TAGS)})$"]({_bbox(lat, lon, CAMPING_RADIUS_KM)});')
+        if kind == "stay":
+            parts.append(f'nwr["tourism"~"^({"|".join(STAY_TAGS)})$"]({_bbox(lat, lon, STAY_RADIUS_KM)});')
         else:
             parts.append(f'nwr["amenity"~"^({"|".join(FOOD_TAGS)})$"]({_bbox(lat, lon, food_radius_km)});')
     return f"[out:json][timeout:{int(timeout_s)}];({''.join(parts)});out center tags;"
