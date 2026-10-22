@@ -26,6 +26,7 @@
 
   /* Layout */
   --chat-width: 320px;
+  --chat-rail: 44px;
   --trace-bar: 32px;
   --elevation-height: 170px;
   --gap: 12px;

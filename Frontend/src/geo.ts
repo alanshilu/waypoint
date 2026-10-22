@@ -102,3 +102,21 @@ export function pointAtMile(index: MileIndex, mile: number): Position | null {
   const b = coordinates[hi];
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
+
+/** The mile marker of the route point nearest p ([lon, lat]): where along the route the pointer is. */
+export function nearestMile(index: MileIndex, p: Position): number {
+  const { coordinates, miles } = index;
+  const kx = Math.cos(toRad(p[1]));
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < coordinates.length; i++) {
+    const dx = (coordinates[i][0] - p[0]) * kx;
+    const dy = coordinates[i][1] - p[1];
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return miles[best] ?? 0;
+}

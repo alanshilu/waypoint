@@ -4,6 +4,7 @@ import { capabilities } from "../api";
 
 // The scripted mock answers from fixtures; only the real agent takes the user's own Anthropic key
 const MOCK_REPLIES = capabilities.replies === "mock";
+import { usePrefs } from "../state/prefs";
 import { useTrip } from "../state/TripProvider";
 import type { StepView } from "../types";
 import OwnKeyPanel from "./OwnKeyPanel";
@@ -17,19 +18,35 @@ const STATUS_LABEL: Record<StepView["status"], string> = {
   error: "failed",
 };
 
-/** Tool calls for one assistant turn, shown above its reply. */
+/** Each tool as a checklist item reads, outside the developer view. */
+const STEP_LABEL: Record<string, string> = {
+  geocode_location: "Look up the place",
+  create_trip: "Save the trip",
+  generate_routes: "Find the routes",
+  plan_stops: "Plan the stops",
+  get_weather_forecast: "Check the weather",
+  search_pois: "Find stops nearby",
+  find_places: "Find places to stay and eat",
+  select_route: "Select the route",
+};
+
+/**
+ * What the agent did this turn, shown above its reply: in plain words, or in the developer view the raw tool
+ * names and timings. A failure always says why.
+ */
 function StepChecklist({ steps }: { steps: StepView[] }) {
+  const { developerView } = usePrefs();
   if (steps.length === 0) return null;
   return (
-    <ol className="steps" aria-label="Tool calls">
+    <ol className="steps" aria-label={developerView ? "Tool calls" : "What the agent did"}>
       {steps.map((step, i) => (
         <li key={i} className={`step ${step.status}`}>
           <span className="step-mark" aria-hidden="true">
             {step.status === "done" ? "✓" : step.status === "error" ? "×" : ""}
           </span>
-          <span className="step-tool">{step.tool}</span>
+          <span className="step-tool">{developerView ? step.tool : (STEP_LABEL[step.tool] ?? step.tool)}</span>
           <span className="sr-only">{STATUS_LABEL[step.status]}</span>
-          <span className="step-ms">{step.ms === null ? "…" : `${step.ms} ms`}</span>
+          {developerView && <span className="step-ms">{step.ms === null ? "…" : `${step.ms} ms`}</span>}
           {step.status === "error" && step.error && <span className="step-error">{step.error}</span>}
         </li>
       ))}
@@ -93,7 +110,14 @@ function PendingStatus({ steps }: { steps: StepView[] }) {
   );
 }
 
-export default function ChatPanel() {
+interface Props {
+  /** Folded into a narrow rail; the chat stays mounted, so a half-typed message survives */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onOpenGuide: () => void;
+}
+
+export default function ChatPanel({ collapsed, onToggleCollapsed, onOpenGuide }: Props) {
   const { messages, busy, sendMessage, retryLast, trip, selectedRouteId } = useTrip();
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -118,12 +142,34 @@ export default function ChatPanel() {
   );
 
   return (
-    <aside className="chat" aria-label="Trip agent chat">
+    <aside className={collapsed ? "chat collapsed" : "chat"} aria-label="Trip agent chat">
+      {collapsed && (
+        <div className="chat-rail">
+          <button type="button" className="rail-button" aria-label="Open the chat" title="Open the chat" onClick={onToggleCollapsed}>
+            &raquo;
+          </button>
+          <button type="button" className="rail-button" aria-label="How to use Waypoint" title="How to use Waypoint" onClick={onOpenGuide}>
+            ?
+          </button>
+          <span className="rail-label" aria-hidden="true">
+            Chat
+          </span>
+          {/* the agent is still working: worth opening the chat for */}
+          {busy && <span className="rail-busy" role="status" aria-label="The agent is working" />}
+        </div>
+      )}
+      <div className="chat-body" hidden={collapsed}>
       <header className="chat-head">
         <span className="brand">Waypoint</span>
         <span className="chat-head-side">
           {!MOCK_REPLIES && <OwnKeyPanel />}
           <span className={MOCK_REPLIES ? "mode-badge mock" : "mode-badge"}>{MOCK_REPLIES ? "Mock data" : "Live API"}</span>
+          <button type="button" className="head-button" aria-label="How to use Waypoint" title="How to use Waypoint" onClick={onOpenGuide}>
+            ?
+          </button>
+          <button type="button" className="head-button" aria-label="Fold the chat away" title="Fold the chat away" onClick={onToggleCollapsed}>
+            &laquo;
+          </button>
         </span>
       </header>
       <ServerWaking />
@@ -131,7 +177,8 @@ export default function ChatPanel() {
       <div className="chat-list" ref={listRef} aria-live="polite">
         {messages.length === 0 && (
           <p className="chat-empty">
-            Tell the agent where you are driving from and to. Each tool call it makes is listed as it runs.
+            Tell the agent where you are driving from and to. Each step it takes is listed as it runs; the ? button
+            explains the rest.
           </p>
         )}
         {messages.map((message) =>
@@ -181,6 +228,7 @@ export default function ChatPanel() {
           Send
         </button>
       </form>
+      </div>
     </aside>
   );
 }

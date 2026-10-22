@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { geoPath } from "d3-geo";
-import { buildMileIndex, simplifyLine } from "../geo";
+import { buildMileIndex, nearestMile, simplifyLine } from "../geo";
 import { useTrip } from "../state/TripProvider";
 import { useSize } from "../useSize";
 import type { PlaceOption } from "../types";
@@ -19,7 +19,7 @@ import { StateLabels, StatesLayer } from "./map/StatesLayer";
 import HighwayLayer from "./map/HighwayLayer";
 import ShieldLayer from "./map/ShieldLayer";
 import { placeShields, route66LabelAt } from "./map/shields";
-import { RouteHoverDots, RouteLines, RouteTags } from "./map/RouteLayer";
+import { RouteHoverCar, RouteLines, RouteTags } from "./map/RouteLayer";
 import type { MapRoute } from "./map/RouteLayer";
 import StepMarkers from "./map/StepMarkers";
 import { EndpointMarkers, PlaceMarkers, StopMarkers } from "./map/Markers";
@@ -40,7 +40,11 @@ const CLOSE_UP_K = 1.5;
  * they share: the view, the zoom, what's hovered and the directions step in view.
  */
 export default function RouteMap() {
-  const { trip, tripLoading, selectedRouteId, hoverMile, pois, places, selectRoute, error, busy, sendMessage } = useTrip();
+  const { trip, tripLoading, selectedRouteId, hoverMile, setHoverMile, pois, places, selectRoute, error, busy, sendMessage } =
+    useTrip();
+  // The route the pointer is driving along on the map; null when the hover comes from the elevation chart
+  const [hoveredRouteId, setHoveredRouteId] = useState<number | null>(null);
+  const hoverFrame = useRef<number | null>(null);
   const [hoveredPoi, setHoveredPoi] = useState<number | null>(null);
   const [hoveredPlace, setHoveredPlace] = useState<string | null>(null);
   // The Interstates and US routes, drawn faded; null until loaded (or if they can't be)
@@ -161,6 +165,30 @@ export default function RouteMap() {
   const route66At = useMemo(() => (projection ? route66LabelAt(projection, width, height) : null), [projection, width, height]);
 
   const path = projection ? geoPath(projection) : null;
+
+  /** The pointer along a route on the map: the mile it's at drives the car, and the elevation chart follows. */
+  const onHoverAlong = (routeId: number | null, clientX?: number, clientY?: number) => {
+    if (hoverFrame.current !== null) cancelAnimationFrame(hoverFrame.current);
+    if (routeId === null) {
+      hoverFrame.current = null;
+      setHoveredRouteId(null);
+      setHoverMile(null);
+      return;
+    }
+    // at most once a frame: a mousemove can fire far more often than the map can redraw
+    hoverFrame.current = requestAnimationFrame(() => {
+      hoverFrame.current = null;
+      const rect = svgRef.current?.getBoundingClientRect();
+      const mapRoute = routes.find((r) => r.route.id === routeId);
+      const lonLat = rect && projection?.invert?.([clientX! - rect.left, clientY! - rect.top]);
+      if (!mapRoute || !lonLat) return;
+      setHoveredRouteId(routeId);
+      setHoverMile(Math.round(nearestMile(mapRoute.index, lonLat) * 10) / 10);
+    });
+  };
+  // the car drives the hovered route, else the selected one, else the fastest
+  const carRouteId =
+    hoveredRouteId ?? selectedRouteId ?? routes.find((r) => r.route.route_type === "fastest")?.route.id ?? null;
   const popoverState = picking && !picker.destination && shapes ? shapes.states.find((s) => s.id === (picker.pinnedState ?? picker.hoveredState)) : undefined;
 
   return (
@@ -186,7 +214,14 @@ export default function RouteMap() {
             />
           )}
           <StateLabels states={shapes.states} picking={picking} hoveredState={picker.hoveredState} pinnedState={picker.pinnedState} />
-          <RouteLines routes={ordered} selectedRouteId={selectedRouteId} path={path} fullDetail={zoom.k >= FULL_DETAIL_K} onSelect={selectRoute} />
+          <RouteLines
+            routes={ordered}
+            selectedRouteId={selectedRouteId}
+            path={path}
+            fullDetail={zoom.k >= FULL_DETAIL_K}
+            onSelect={selectRoute}
+            onHoverAlong={onHoverAlong}
+          />
           <RouteTags routes={ordered} selectedRouteId={selectedRouteId} projection={projection} />
           {showDirections && directions && (
             <StepMarkers directions={directions} active={activeStep} hovered={hoveredStep} path={path} projection={projection} />
@@ -195,7 +230,7 @@ export default function RouteMap() {
             <ShieldLayer shields={shields} route66At={route66At} hovered={hoveredHighway} setHovered={setHoveredHighway} interactive={!picking} />
           )}
           {trip && <EndpointMarkers places={[trip.origin, trip.destination]} projection={projection} />}
-          {hoverMile !== null && <RouteHoverDots routes={ordered} selectedRouteId={selectedRouteId} projection={projection} mile={hoverMile} />}
+          {hoverMile !== null && <RouteHoverCar routes={ordered} carRouteId={carRouteId} projection={projection} mile={hoverMile} />}
           <PlaceMarkers places={placeMarkers} projection={projection} hovered={hoveredPlace} onHover={setHoveredPlace} />
           {stops && (
             <StopMarkers
