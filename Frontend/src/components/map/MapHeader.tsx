@@ -1,4 +1,5 @@
 import type { Trip } from "../../types";
+import TripActions from "../TripActions";
 import type { FitMode } from "./layout";
 import { shortName } from "./Markers";
 import { cityLabel } from "./useCityPicker";
@@ -86,6 +87,7 @@ export default function MapHeader({ trip, picking, picker, busy, view, zoomed, h
           </button>
         )}
       </div>
+      <TripActions />
     </div>
   );
 }

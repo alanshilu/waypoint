@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     agent_max_sessions: int = Field(default=200, validation_alias="AGENT_MAX_SESSIONS")
     agent_sessions_per_ip_per_hour: int = Field(default=5, validation_alias="AGENT_SESSIONS_PER_IP_PER_HOUR")
     agent_daily_turn_cap: int = Field(default=200, validation_alias="AGENT_DAILY_TURN_CAP")
+    # GET /shared/{public_id} (a trip opened from its share link): requests per client address per minute
+    shared_rate_limit_per_minute: int = Field(default=30, validation_alias="SHARED_RATE_LIMIT_PER_MINUTE")
     # User turns kept per session; older turns are dropped from the front
     agent_history_max_turns: int = Field(default=12, validation_alias="AGENT_HISTORY_MAX_TURNS")
 

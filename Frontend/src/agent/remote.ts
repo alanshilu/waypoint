@@ -40,22 +40,26 @@ function arrivalWeather(trip: Trip, stops: PlannedStop[]): Trip["weather"] {
 const shortDate = (iso: string) =>
   new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
+/** The planned stops as the map's stop list shows them. */
+export function plannedStopsList(planned: PlannedStop[]): PoiResult | undefined {
+  if (planned.length === 0) return undefined;
+  return {
+    label: "your planned stops",
+    center: { lat: planned[0].lat, lon: planned[0].lon },
+    items: planned.map((s, i) => ({
+      id: i + 1,
+      name: s.name,
+      category: `day ${s.day}, ${shortDate(s.arrival_date)}`,
+      lat: s.lat,
+      lon: s.lon,
+    })),
+  };
+}
+
 /** What the map's stop list shows: the planned overnight stops, else the last POI search. */
 function stopsFrom(response: AgentApiResponse): PoiResult | undefined {
-  const planned = response.planned_stops;
-  if (planned.length > 0) {
-    return {
-      label: "your planned stops",
-      center: { lat: planned[0].lat, lon: planned[0].lon },
-      items: planned.map((s, i) => ({
-        id: i + 1,
-        name: s.name,
-        category: `day ${s.day}, ${shortDate(s.arrival_date)}`,
-        lat: s.lat,
-        lon: s.lon,
-      })),
-    };
-  }
+  const planned = plannedStopsList(response.planned_stops);
+  if (planned) return planned;
   if (response.pois && response.pois.items.length > 0) {
     return { label: "the search point", center: response.pois.center, items: response.pois.items };
   }
@@ -137,6 +141,7 @@ export function createRemoteAgent(agent: AgentApi, trips: Pick<TripApi, "getTrip
         selectedRouteId: trip?.selected_route_id ?? undefined,
         pois,
         places,
+        plannedStops: response.planned_stops.length > 0 ? response.planned_stops : undefined,
         chips: trip ? agentChips(trip) : [],
       };
     },

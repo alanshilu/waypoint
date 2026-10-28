@@ -65,6 +65,8 @@ export interface WeatherPoint extends Place {
 
 export interface Trip {
   id: number;
+  /** Names the trip in its share link, /t/<public_id>; absent in mock mode and on older backends */
+  public_id?: string | null;
   origin: Place;
   destination: Place;
   selected_route_id: number | null;
@@ -250,6 +252,8 @@ export interface AgentTurnResult extends AgentReply {
   selectedRouteId?: number;
   pois?: PoiResult;
   places?: PlaceGroup[];
+  /** The overnight stops the agent planned this turn, for the Google Maps link and the GPX file */
+  plannedStops?: PlannedStop[];
   chips: string[];
   failed?: boolean;
 }
@@ -303,8 +307,28 @@ export interface RawRoutesGenerated {
 }
 
 /** GET /trips/{id} */
+/** A trip opened from its share link: read-only, with the plan the agent made for it. */
+export interface SharedTrip {
+  trip: Trip;
+  plannedStops: PlannedStop[];
+  places: PlaceGroup[];
+}
+
+/** GET /shared/{public_id}: no trip or route ids; the selected route is flagged instead. */
+export interface RawSharedTrip {
+  public_id: string;
+  name: string | null;
+  origin: Place;
+  destination: Place;
+  routes: (Omit<RawRoute, "id" | "trip_id" | "is_selected" | "created_at"> & { selected: boolean })[];
+  planned_stops: PlannedStop[];
+  places: PlaceGroup[];
+  plan_saved_at: string | null;
+}
+
 export interface RawTrip {
   id: number;
+  public_id?: string | null;
   name: string | null;
   origin: Place;
   destination: Place;

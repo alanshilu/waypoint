@@ -161,7 +161,7 @@ def new_session(client) -> str:
     return r.json()["session_id"]
 
 
-def test_happy_path_returns_answer_trip_and_tool_calls(client, store, tools, monkeypatch):
+def test_happy_path_returns_answer_trip_and_tool_calls(client, store, tools, monkeypatch, plan_store):
     fake = install(monkeypatch, [
         tool_call_response(("create_trip", {"name": "x"}), ("plan_stops", {"trip_id": 9, "route_id": 17})),
         final_response(),
@@ -180,6 +180,9 @@ def test_happy_path_returns_answer_trip_and_tool_calls(client, store, tools, mon
     assert all(c["ms"] >= 0 and c["error"] is None for c in body["tool_calls"])
     assert body["planned_stops"][0]["name"] == "Los Angeles"
     assert body["usage"]["input_tokens"] == 150 and body["usage"]["requests"] == 2
+    # the plan is kept for the trip's share link
+    assert plan_store.saved[0][0] == 9
+    assert plan_store.saved[0][1]["planned_stops"][0]["name"] == "Los Angeles"
 
     # The second message is sent with the first turn's history, and the session keeps the trip
     r2 = client.post("/agent/message", json={"session_id": sid, "message": "and again?", "selected_route_id": 17})

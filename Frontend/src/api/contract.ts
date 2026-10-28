@@ -1,4 +1,15 @@
-import type { AgentApiResponse, AgentStreamEvent, ForecastDay, Place, PlaceGroup, PlaceKind, Poi, Route, Trip } from "../types";
+import type {
+  AgentApiResponse,
+  AgentStreamEvent,
+  ForecastDay,
+  Place,
+  PlaceGroup,
+  PlaceKind,
+  Poi,
+  Route,
+  SharedTrip,
+  Trip,
+} from "../types";
 
 /**
  * What the app asks of the backend, split by concern so each consumer depends only on what it uses.
@@ -20,6 +31,8 @@ export interface TripApi {
   generateRoutes(tripId: number): Promise<Route[]>;
   /** POST /routes/select/{route_id} */
   selectRoute(routeId: number): Promise<void>;
+  /** GET /shared/{public_id}: a trip from its share link, read-only. Its route ids are local, not the backend's. */
+  getSharedTrip(publicId: string): Promise<SharedTrip>;
 }
 
 export interface PoiApi {

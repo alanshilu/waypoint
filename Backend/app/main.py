@@ -5,7 +5,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.endpoints import agent, health, location, places, pois, routes, trips, weather
+from app.api.v1.endpoints import agent, health, location, places, pois, routes, shared, trips, weather
 from app.core.config import settings
 from app.services.deadline import DeadlineMiddleware
 
@@ -40,4 +40,5 @@ app.include_router(places.router, prefix="/places", tags=["Places"])
 app.include_router(trips.router, prefix="/trips", tags=["Trips"])
 app.include_router(routes.router, prefix="/routes", tags=["Routes"])
 app.include_router(agent.router, prefix="/agent", tags=["Agent"])
+app.include_router(shared.router, prefix="/shared", tags=["Shared trips"])
 app.include_router(health.router, tags=["Health"])

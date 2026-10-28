@@ -54,6 +54,8 @@ def add_duration_ratios(route_dicts: list[dict]) -> list[dict]:
 def trip_to_dict(trip: Trip, routes: list[Route], tolerance: float = DEFAULT_SIMPLIFY_TOLERANCE) -> dict:
     return {
         "id": trip.id,
+        # for the share link, /t/<public_id>
+        "public_id": str(trip.public_id) if trip.public_id else None,
         "name": trip.name,
         "origin": point_to_place(trip.origin_name, trip.origin_point),
         "destination": point_to_place(trip.destination_name, trip.destination_point),

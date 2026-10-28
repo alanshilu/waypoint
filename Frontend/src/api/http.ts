@@ -9,6 +9,7 @@ import type {
   RawPoiSearch,
   RawRoute,
   RawRoutesGenerated,
+  RawSharedTrip,
   RawTrip,
   RawTripCreated,
   Route,
@@ -167,11 +168,33 @@ export function createHttpBackend(base: string): HttpBackend {
       const data = await request<RawTrip>(`/trips/${tripId}`);
       return {
         id: data.id,
+        public_id: data.public_id ?? null,
         origin: data.origin,
         destination: data.destination,
         selected_route_id: data.selected_route_id,
         routes: data.routes.map(adaptRoute),
         weather: [],
+      };
+    },
+
+    async getSharedTrip(publicId) {
+      const data = await request<RawSharedTrip>(`/shared/${encodeURIComponent(publicId)}`);
+      // The link carries no backend ids: number the routes locally (1, 2), only for selecting them on screen
+      const routes = data.routes.map((r, i) => adaptRoute({ ...r, id: i + 1, trip_id: 0, is_selected: r.selected, created_at: "" }));
+      const selected = data.routes.findIndex((r) => r.selected);
+      const destination = data.planned_stops.find((s) => s.kind === "destination" && s.forecast);
+      return {
+        trip: {
+          id: 0,
+          public_id: data.public_id,
+          origin: data.origin,
+          destination: data.destination,
+          selected_route_id: selected >= 0 ? selected + 1 : null,
+          routes,
+          weather: destination?.forecast ? [{ ...data.destination, forecast: [destination.forecast] }] : [],
+        },
+        plannedStops: data.planned_stops,
+        places: data.places,
       };
     },
 

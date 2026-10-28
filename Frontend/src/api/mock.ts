@@ -5,7 +5,7 @@ import directionsFixtureJson from "../fixtures/directions.sf-la.json";
 import { haversineMiles } from "../geo";
 import type { DirectionStep, Place, PlaceGroup, PlaceKind, Poi, RouteType, Trip } from "../types";
 import type { BackendApi, PlacePoint } from "./contract";
-import { callMeta } from "./errors";
+import { ApiError, callMeta } from "./errors";
 
 // The mock routes are hand-drawn; their directions are real ORS steps for the same trip
 const mockDirections = directionsFixtureJson as unknown as Record<RouteType, DirectionStep[]>;
@@ -90,6 +90,11 @@ export function createMockBackend(): BackendApi {
     generateRoutes: () => mock(tripFixture.routes, 1150),
     selectRoute: async () => {
       await mock(null, 180);
+    },
+    // The fixtures have no share links (the mock trip has no public_id, so the app offers none)
+    getSharedTrip: async () => {
+      await mock(null, 120);
+      throw new ApiError("Shared trips need the backend; the demo with sample data has none", 404, null);
     },
     searchPois: nearestPois,
     getSavedPois: (lat, lon) => nearestPois(lat, lon),

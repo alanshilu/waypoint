@@ -2,7 +2,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import type { ReactNode } from "react";
 import * as api from "../api";
 import { runAgentTurn } from "../agent";
-import type { AgentTurnResult, ChatMessage, PlaceGroup, PoiResult, StepView, Trip, TurnSource } from "../types";
+import { plannedStopsList } from "../agent/remote";
+import { sharedIdFromPath } from "../share";
+import type {
+  AgentTurnResult,
+  ChatMessage,
+  PlaceGroup,
+  PlannedStop,
+  PoiResult,
+  SharedTrip,
+  StepView,
+  Trip,
+  TurnSource,
+} from "../types";
 
 export interface LastTurn {
   steps: StepView[];
@@ -22,6 +34,10 @@ interface State {
   pois: PoiResult | null;
   /** Campsites and places to eat from the agent, picks marked. Cleared when a new trip loads. */
   places: PlaceGroup[] | null;
+  /** The agent's planned overnight stops, for the Google Maps link and GPX. Cleared when a new trip loads. */
+  plannedStops: PlannedStop[] | null;
+  /** Opened from a share link (/t/<public_id>): read-only, no agent, nothing saved */
+  shared: boolean;
   messages: ChatMessage[];
   lastTurn: LastTurn | null;
   busy: boolean;
@@ -33,6 +49,7 @@ type Action =
   | { type: "HOVER"; mile: number | null }
   | { type: "TRIP_LOADING" }
   | { type: "TRIP_RESTORED"; trip: Trip }
+  | { type: "SHARED_LOADED"; shared: SharedTrip }
   | { type: "TRIP_RESTORE_FAILED"; message: string }
   | { type: "TURN_STARTED"; user: ChatMessage; assistant: ChatMessage; contextRouteId: number | null }
   | { type: "STEPS_UPDATED"; messageId: number; steps: StepView[] }
@@ -46,6 +63,8 @@ const initialState: State = {
   hoverMile: null,
   pois: null,
   places: null,
+  plannedStops: null,
+  shared: sharedIdFromPath(window.location.pathname) !== null,
   messages: [],
   lastTurn: null,
   busy: false,
@@ -75,6 +94,17 @@ function reducer(state: State, action: Action): State {
         selectedRouteId: action.trip.selected_route_id,
         pois: null,
         places: null,
+        plannedStops: null,
+      };
+    case "SHARED_LOADED":
+      return {
+        ...state,
+        tripLoading: false,
+        trip: action.shared.trip,
+        selectedRouteId: action.shared.trip.selected_route_id,
+        pois: plannedStopsList(action.shared.plannedStops) ?? null,
+        places: action.shared.places.length > 0 ? action.shared.places : null,
+        plannedStops: action.shared.plannedStops,
       };
     case "TRIP_RESTORE_FAILED":
       return { ...state, tripLoading: false, error: action.message };
@@ -94,11 +124,12 @@ function reducer(state: State, action: Action): State {
     case "TURN_FINISHED": {
       const { result } = action;
       // The agent and the UI write to the same state: apply what the turn changed.
-      let { trip, selectedRouteId, pois, places } = state;
+      let { trip, selectedRouteId, pois, places, plannedStops } = state;
       if (result.state_changed.includes("trip") && result.trip) {
         if (result.trip.id !== trip?.id) {
           pois = null;
           places = null;
+          plannedStops = null;
         }
         trip = result.trip;
         selectedRouteId = result.selectedRouteId ?? result.trip.selected_route_id;
@@ -115,6 +146,7 @@ function reducer(state: State, action: Action): State {
         selectedRouteId,
         pois: result.state_changed.includes("pois") && result.pois ? result.pois : pois,
         places: result.state_changed.includes("places") && result.places ? result.places : places,
+        plannedStops: result.plannedStops ?? plannedStops,
         hoverMile: null,
         busy: false,
         messages: state.messages.map((m) =>
@@ -213,7 +245,24 @@ export function TripProvider({ children }: { children: ReactNode }) {
   // Restore the last trip after a reload, where the backend keeps trips
   const restored = useRef(false);
   useEffect(() => {
-    if (restored.current || !api.capabilities.restoresTrips) return;
+    if (restored.current) return;
+    // A share link opens that trip read-only, from GET /shared/{public_id}: no agent, nothing remembered
+    const sharedId = sharedIdFromPath(window.location.pathname);
+    if (sharedId) {
+      restored.current = true;
+      dispatch({ type: "TRIP_LOADING" });
+      api.backend
+        .getSharedTrip(sharedId)
+        .then((shared) => dispatch({ type: "SHARED_LOADED", shared }))
+        .catch((error: unknown) =>
+          dispatch({
+            type: "TRIP_RESTORE_FAILED",
+            message: `Could not open this shared trip: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+        );
+      return;
+    }
+    if (!api.capabilities.restoresTrips) return;
     restored.current = true;
     const id = savedTripId();
     if (id === null) return;
@@ -233,13 +282,15 @@ export function TripProvider({ children }: { children: ReactNode }) {
   // Keep the URL and local storage pointing at the current trip
   const tripId = state.trip?.id ?? null;
   useEffect(() => {
-    if (tripId !== null && api.capabilities.restoresTrips) rememberTrip(tripId);
+    if (tripId !== null && api.capabilities.restoresTrips && !stateRef.current.shared) rememberTrip(tripId);
   }, [tripId]);
 
   const selectRoute = useCallback((routeId: number) => {
     const previous = stateRef.current.selectedRouteId;
     if (routeId === previous) return;
     dispatch({ type: "ROUTE_SELECTED", routeId });
+    // A shared trip is read-only: picking a route only changes what this page shows
+    if (stateRef.current.shared) return;
     pickedRouteId.current = routeId;
     // In the public demo only the agent writes routes; the pick reaches it with the next message
     if (!api.capabilities.savesRoutePicks) return;
@@ -256,9 +307,9 @@ export function TripProvider({ children }: { children: ReactNode }) {
   const setHoverMile = useCallback((mile: number | null) => dispatch({ type: "HOVER", mile }), []);
 
   const sendMessage = useCallback((text: string) => {
-    const { trip, selectedRouteId, busy } = stateRef.current;
+    const { trip, selectedRouteId, busy, shared } = stateRef.current;
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || busy || shared) return;
     const user: ChatMessage = { id: nextId.current++, role: "user", text: trimmed, steps: [], pending: false, chips: [] };
     const assistant: ChatMessage = { id: nextId.current++, role: "assistant", text: "", steps: [], pending: true, chips: [] };
     const userSelectedRouteId = pickedRouteId.current;

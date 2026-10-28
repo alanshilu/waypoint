@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from functools import partial
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
@@ -31,8 +32,11 @@ from app.agent.orchestrator import Agent, AgentTurn, get_agent
 from app.agent.responses import build_response, user_text
 from app.agent.sessions import InMemorySessionStore, Session, SessionStore
 from app.core.config import settings
+from app.core.db import SessionLocal
+from app.services import sharing
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 KEEPALIVE_EVERY_S = 15
 
@@ -70,6 +74,37 @@ def finish(store: SessionStore, session: Session, turn: AgentTurn) -> dict[str, 
     return response
 
 
+class PlanStore(Protocol):
+    """Where a trip's latest plan is kept for its share link (trips.shared_plan)."""
+
+    def save(self, trip_id: int, snapshot: dict) -> None: ...
+
+
+class DbPlanStore:
+    def save(self, trip_id: int, snapshot: dict) -> None:
+        with SessionLocal() as db:
+            sharing.save_plan(db, trip_id, snapshot)
+
+
+_plans: PlanStore = DbPlanStore()
+
+
+def get_plan_store() -> PlanStore:
+    """FastAPI dependency; tests override it."""
+    return _plans
+
+
+def keep_plan(plans: PlanStore, response: dict[str, Any]) -> None:
+    """Keeps the turn's planned stops and places for the trip's share link. A failure here never fails the turn."""
+    snapshot = sharing.plan_snapshot(response)
+    if response.get("trip_id") is None or snapshot is None:
+        return
+    try:
+        plans.save(response["trip_id"], snapshot)
+    except Exception:  # noqa: BLE001 - the reply still stands; the share link shows the previous plan
+        log.exception("Could not keep the plan for trip %s", response["trip_id"])
+
+
 @router.post("/sessions")
 def create_session(request: Request, store: SessionStore = Depends(get_store), limits: AgentLimits = Depends(get_limits)):
     # Behind a reverse proxy, run uvicorn with --proxy-headers so this is the visitor's address
@@ -87,6 +122,7 @@ async def agent_message(
     store: SessionStore = Depends(get_store),
     limits: AgentLimits = Depends(get_limits),
     agent: Agent = Depends(get_agent),
+    plans: PlanStore = Depends(get_plan_store),
     x_anthropic_key: str | None = Header(default=None, alias=OWN_KEY_HEADER),
 ):
     try:
@@ -99,7 +135,9 @@ async def agent_message(
         loop = asyncio.get_running_loop()
         work = partial(agent.run, list(session.messages), user_text(body.message, body.selected_route_id), api_key=key)
         turn = await asyncio.wait_for(loop.run_in_executor(None, work), timeout=settings.agent_timeout_s)
-        return finish(store, session, turn)
+        response = finish(store, session, turn)
+        await asyncio.to_thread(keep_plan, plans, response)
+        return response
     except Exception as e:  # noqa: BLE001 - every failure becomes a clean JSON error
         return classify(e, own=key is not None).response()
     finally:
@@ -116,6 +154,7 @@ async def agent_message_stream(
     store: SessionStore = Depends(get_store),
     limits: AgentLimits = Depends(get_limits),
     agent: Agent = Depends(get_agent),
+    plans: PlanStore = Depends(get_plan_store),
     x_anthropic_key: str | None = Header(default=None, alias=OWN_KEY_HEADER),
 ):
     """
@@ -163,7 +202,9 @@ async def agent_message_stream(
                 if kind == "event":
                     yield _sse(payload["type"], payload)
                 elif kind == "done":
-                    yield _sse("final", finish(store, session, payload))
+                    response = finish(store, session, payload)
+                    await asyncio.to_thread(keep_plan, plans, response)
+                    yield _sse("final", response)
                     return
                 else:
                     yield _sse("error", classify(payload, own=own).body())

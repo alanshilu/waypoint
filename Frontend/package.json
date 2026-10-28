@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types --disable-warning=ExperimentalWarning tests/*.test.ts",
     "fixture": "node scripts/make-fixture.mjs",
     "highways": "node scripts/make-highways.mjs"
   },
@@ -22,6 +23,7 @@
     "us-atlas": "^3.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/d3-geo": "^3.1.1",
     "@types/geojson": "^7946.0.16",
     "@types/react": "^19.3.0",

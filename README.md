@@ -32,6 +32,7 @@ Ask for a drive ("San Francisco to Los Angeles, I'll take the scenic route and l
 - **Visible reasoning.** Each tool call streams to the chat as it runs (server-sent events), and a trace drawer shows latency, cache hits and errors per call.
 - **Where to stay and eat.** For each night, the agent recommends a place to stay (a campground, RV park, motel, hotel, guest house, hostel, cabin or rental, following what you ask for) and a place to eat; for each day, a lunch stop where the drive reaches noon. Picks come with a reason from OpenStreetMap facts (showers, tents allowed, brand, stars, wifi, cuisine, hours), and every option found appears on the map and in a list.
 - **Pick on the map.** States are labelled. Before a trip exists, you can choose a start and an end city from each state's five most populous cities (Census 2023 estimates) instead of typing.
+- **Share and export.** "Share" copies a link (`/t/<public_id>`, a random UUID, never the trip's number) that opens the trip read-only: both routes, the picked one, the planned stops and the places, with no agent and no cost. "Google Maps" opens directions through the overnight stops, and "GPX" downloads the selected route as a track.
 - **Mock mode.** The frontend runs entirely from fixtures, with no backend or API keys, for demos and UI work.
 - **Ready for a public demo.** One `docker compose up` starts everything. Cost limits cap agent use per visitor and per day, and a demo mode makes all trip and route writes agent-only.
 - **Bring your own key.** Heavy users can plug in their own Anthropic API key. Their turns are billed to them and skip the daily limit, and Waypoint never stores the key.
@@ -289,7 +290,8 @@ Serve the app over HTTPS so the key is encrypted in transit.
 | GET | `/location/search` | Geocode a place name |
 | POST | `/trips/` | Create a trip (`reuse_recent=true` returns a matching one from the last 24 h) |
 | GET | `/trips/trips` | List trips |
-| GET | `/trips/{trip_id}` | A trip with its routes |
+| GET | `/trips/{trip_id}` | A trip with its routes and its `public_id` |
+| GET | `/shared/{public_id}` | A shared trip, read-only: routes, the selected one, planned stops and places, with no trip, route or session ids. Rate limited per address (`SHARED_RATE_LIMIT_PER_MINUTE`, 30) |
 | POST | `/trips/{trip_id}/plan` | Overnight stops for a route |
 | POST | `/routes/generate/{trip_id}` | Fastest and scenic (`backroads`) routes |
 | POST | `/routes/select/{route_id}` | Select a route |
@@ -310,7 +312,7 @@ Backend/
     models/       SQLAlchemy + GeoAlchemy models: trip, route, POI
     schemas/      Pydantic request and response models
     services/     routing, geocoding, POIs, weather, scoring, stop planning
-  alembic/        database migrations (4)
+  alembic/        database migrations (8)
   evals/          eval cases, checks, runner and the baseline/final reports
   tests/          pytest suite
   Dockerfile      backend image: migrates, then serves; non-root, health check
@@ -340,6 +342,8 @@ docs/screenshots/          the images in this README
   - Results are cached for a day in the database (`places_cache`), so restarts and Render sleeps keep them; a repeated route is answered instantly.
   - If Overpass fails, places to stay and eat fall back to OpenRouteService within about 1.6 miles, with a note.
 - **Place facts are only as complete as OpenStreetMap.** Many campgrounds list no amenities and many motels no more than a brand; prices aren't in OpenStreetMap; opening hours are shown as tagged, not checked against your arrival time.
+- **A share link shows the trip's latest plan.** Trips with the same start and end are reused for 24 hours, across conversations, and so is their saved plan: a later plan for the same trip replaces what an earlier link shows. `GET /trips/{trip_id}` is also still public and numbered, so the random `public_id` keeps a link from being guessed but doesn't hide trips from someone counting through `/trips/1`, `/trips/2`...
+- **Export limits.** A Google Maps link takes at most 9 waypoints (3 on a phone's browser), so later nights are left out, and Google picks its own roads between the stops. The GPX track is the line the app draws, simplified to about 100 m.
 - **Lunch time isn't added to the schedule.** Lunch stops are where each day's driving reaches noon; the break doesn't push back arrival times.
 - **US only.** The map and prompt target US road trips.
 

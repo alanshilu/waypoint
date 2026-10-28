@@ -1116,6 +1116,81 @@ button:disabled {
   color: var(--parchment-light);
 }
 
+/* ---- Share and export --------------------------------------------------- */
+
+.trip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.trip-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--espresso);
+  background: var(--parchment-light);
+  color: var(--espresso);
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.trip-action:hover {
+  background: var(--parchment);
+}
+
+.trip-action-note,
+.trip-action-status {
+  font-size: 12px;
+  color: var(--espresso);
+}
+
+.trip-action-status:empty {
+  display: none;
+}
+
+.trip-action-link {
+  margin-left: 6px;
+  width: 22ch;
+  padding: 2px 4px;
+  border: 1px solid var(--hairline);
+  background: var(--parchment-light);
+  font-family: var(--font-data);
+  font-size: 12px;
+}
+
+/* ---- A shared trip, in place of the chat -------------------------------- */
+
+.shared-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  line-height: 1.5;
+}
+
+.shared-body h2 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 20px;
+}
+
+.shared-body p {
+  margin: 0;
+}
+
+.shared-own {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border: 1px solid var(--espresso);
+  background: var(--espresso);
+  color: var(--parchment-light);
+  text-decoration: none;
+}
+
 /* ---- Directions --------------------------------------------------------- */
 
 .directions-panel {
