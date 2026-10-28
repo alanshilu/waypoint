@@ -4,9 +4,9 @@
 
 AI road-trip planner: a Claude tool-calling agent plans routes, overnight stops and weather on a FastAPI + PostGIS backend. React frontend. Agent evals: 1/10 → 10/10 cases.
 
-Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leave tomorrow at 8am") and the agent geocodes both ends, generates a fastest and a backroads route, splits the drive into days, checks the weather at each stop **on the day you'll be there**, and finds places to stop. Every number it tells you comes from a tool result, and the app shows each tool call as it runs.
+Ask for a drive ("San Francisco to Los Angeles, I'll take the scenic route and leave tomorrow at 8am") and the agent geocodes both ends, generates a fastest and a scenic route, splits the drive into days, checks the weather at each stop **on the day you'll be there**, and finds places to stop. Every number it tells you comes from a tool result, and the app shows each tool call as it runs.
 
-![Fastest and backroads routes from San Francisco to Los Angeles, compared side by side with their elevation profiles](docs/screenshots/02-routes-compared.png)
+![Fastest and scenic routes from San Francisco to Los Angeles, compared side by side with their elevation profiles](docs/screenshots/02-routes-compared.png)
 
 ## Contents
 
@@ -24,7 +24,7 @@ Ask for a drive ("San Francisco to Los Angeles, I'll take the backroads and leav
 
 ## Features
 
-- **Two routes per trip.** A fastest route and a backroads route (avoiding highways), compared on drive time, distance, total climb and a terrain-based scenic score.
+- **Two routes per trip.** A fastest route and a scenic route (avoiding highways; its id in the API is `backroads`), compared on drive time, distance, total climb and a terrain-based scenic score.
 - **Overnight stops.** A deterministic planner splits long drives into days, honouring a daily driving limit and a departure time.
 - **Weather on arrival dates.** Forecasts are fetched for each stop on the date you reach it, in that place's time zone.
 - **Points of interest.** Food, fuel, lodging and sights near the destination or along the selected route.
@@ -43,11 +43,11 @@ One live conversation, captured on 2026-10-18: the real agent (Claude Sonnet 5.5
 **1. The agent at work.** Each tool call appears as it starts and gets a tick and its latency when it finishes.
 ![The agent geocoding both ends and saving the trip](docs/screenshots/01-agent-working.png)
 
-**2. Routes compared.** "San Francisco to Los Angeles": the fastest route is 383 mi in 6h 30m; the backroads route adds 7h 31m and twice the climbing, for a scenic score of 52.6 against 38.3. Hovering the elevation profile moves a marker along both routes on the map.
-![Fastest and backroads routes with elevation profiles](docs/screenshots/02-routes-compared.png)
+**2. Routes compared.** "San Francisco to Los Angeles": the fastest route is 383 mi in 6h 30m; the scenic route adds 7h 31m and twice the climbing, for a scenic score of 52.6 against 38.3. Hovering the elevation profile moves a marker along both routes on the map.
+![Fastest and scenic routes with elevation profiles](docs/screenshots/02-routes-compared.png)
 
-**3. Overnight stops with arrival-day weather.** "I'll take the backroads and leave tomorrow at 8am, max 5 hours of driving a day." The agent selects the backroads route and splits it into three days. Each night's forecast is for the date you get there, and it warns about an 80% chance of rain on arrival in Los Angeles.
-![Three-day backroads plan with overnight stops](docs/screenshots/03-overnight-stops.png)
+**3. Overnight stops with arrival-day weather.** "I'll take the backroads and leave tomorrow at 8am, max 5 hours of driving a day." The agent selects the scenic route and splits it into three days. Each night's forecast is for the date you get there, and it warns about an 80% chance of rain on arrival in Los Angeles.
+![Three-day scenic plan with overnight stops](docs/screenshots/03-overnight-stops.png)
 
 **4. Tool trace.** The calls behind the last reply, with status, latency and the model tokens for each.
 ![Tool trace drawer](docs/screenshots/04-tool-trace.png)
@@ -60,10 +60,10 @@ One live conversation, captured on 2026-10-18: the real agent (Claude Sonnet 5.5
 
 **7. Where to camp and eat.** "San Francisco to Los Angeles on the backroads, leave tomorrow at 8am, max 5 hours of driving a day. Where can we camp and eat?" The agent plans three days and picks:
 - a campsite for each night, e.g. Primitive Camp, 1.0 mi from the night 1 stop, tents allowed and free
-- dinner and lunch stops, widening the food search to about 12 miles where the backroads run far from any town
+- dinner and lunch stops, widening the food search to about 12 miles where the scenic route runs far from any town
 
 Where nothing turned up, it says to bring dinner instead of inventing a restaurant. Tents are campsites, circles are food, and the agent's picks are filled and named.
-![Campsites and places to eat along a three-day backroads trip](docs/screenshots/07-camp-and-eat.png)
+![Campsites and places to eat along a three-day scenic trip](docs/screenshots/07-camp-and-eat.png)
 
 ## How it works
 
@@ -99,7 +99,7 @@ The agent's tools call the backend's own REST API over HTTP, so the agent and th
 |---|---|
 | `geocode_location` | Place name to coordinates and a canonical label |
 | `create_trip` | Saves a trip; reuses one with the same endpoints from the last 24 hours |
-| `generate_routes` | Fastest and backroads routes with distance, duration, climb and scenic score; reuses existing routes |
+| `generate_routes` | Fastest and scenic (`backroads`) routes with distance, duration, climb and scenic score; reuses existing routes |
 | `plan_stops` | Splits a route into driving days and returns overnight stops with arrival-date forecasts |
 | `get_weather_forecast` | Forecast for a point on a target date |
 | `search_pois` | Points of interest near a point |
@@ -117,7 +117,7 @@ density = (ascent_m + descent_m) / distance_miles
 score   = 100 × density / (density + 40)
 ```
 
-40 m/mi scores 50. Flat interstate lands around 20, SF to LA on I-5 around 38, the coastal backroads around 53, sustained mountain driving 70+. It is a relative value for comparing routes, not a rating. How much slower a route is gets reported separately as `duration_vs_fastest`. Details: [`scoring_service.py`](Backend/app/services/scoring_service.py).
+40 m/mi scores 50. Flat interstate lands around 20, SF to LA on I-5 around 38, the coastal scenic route around 53, sustained mountain driving 70+. It is a relative value for comparing routes, not a rating. How much slower a route is gets reported separately as `duration_vs_fastest`. Details: [`scoring_service.py`](Backend/app/services/scoring_service.py).
 
 ### Overnight stops
 
@@ -291,7 +291,7 @@ Serve the app over HTTPS so the key is encrypted in transit.
 | GET | `/trips/trips` | List trips |
 | GET | `/trips/{trip_id}` | A trip with its routes |
 | POST | `/trips/{trip_id}/plan` | Overnight stops for a route |
-| POST | `/routes/generate/{trip_id}` | Fastest and backroads routes |
+| POST | `/routes/generate/{trip_id}` | Fastest and scenic (`backroads`) routes |
 | POST | `/routes/select/{route_id}` | Select a route |
 | GET | `/pois/`, `/pois/search` | Points of interest |
 | POST | `/places/search` | Places to stay and to eat near up to 10 points |

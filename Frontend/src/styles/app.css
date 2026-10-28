@@ -270,8 +270,11 @@ button:disabled {
 
 .chat-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  /* a narrow panel puts the controls on a row of their own, whole, under the name */
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--hairline);
 }
@@ -280,12 +283,13 @@ button:disabled {
   font-family: var(--font-heading);
   font-size: 22px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .mode-badge {
   font-family: var(--font-data);
   font-size: 12px;
-  padding: 1px 6px;
+  padding: 0 8px;
   border: 1px solid var(--hairline);
 }
 
@@ -300,8 +304,26 @@ button:disabled {
 
 .chat-head-side {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* The header's controls: one height, centred, never wrapped onto two lines */
+.chat-head-side > .own-key-toggle,
+.chat-head-side > .mode-badge,
+.chat-head-side > .head-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.chat-head-side > .head-button {
+  width: 28px;
 }
 
 .server-waking {
@@ -317,7 +339,7 @@ button:disabled {
 /* Bring your own key: the toggle in the chat head, the form below it */
 .own-key-toggle {
   font-size: 12px;
-  padding: 1px 6px;
+  padding: 0 8px;
   border: 1px solid var(--hairline);
   background: transparent;
   color: var(--ink-muted);

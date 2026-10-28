@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { capabilities } from "../api";
+import { routeName } from "../format";
 
 // The scripted mock answers from fixtures; only the real agent takes the user's own Anthropic key
 const MOCK_REPLIES = capabilities.replies === "mock";
@@ -138,7 +139,7 @@ export default function ChatPanel({ collapsed, onToggleCollapsed, onOpenGuide }:
   // chip that would re-select what is already selected.
   const selectedType = trip?.routes.find((r) => r.id === selectedRouteId)?.route_type;
   const chips = (messages.length === 0 ? STARTER_CHIPS : last && !last.pending ? last.chips : []).filter(
-    (chip) => chip !== `Select ${selectedType}`,
+    (chip) => !selectedType || chip !== `Select ${routeName(selectedType)}`,
   );
 
   return (

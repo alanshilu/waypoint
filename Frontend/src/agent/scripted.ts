@@ -1,5 +1,5 @@
 import type { BackendApi, PlacePoint } from "../api/contract";
-import { routeLabel } from "../format";
+import { routeLabel, routeName } from "../format";
 import { buildMileIndex, pointAtMile } from "../geo";
 import { placeGlyph } from "../placeGlyph";
 import type { AgentTurnResult, CacheStatus, StepView, Trip } from "../types";
@@ -152,7 +152,7 @@ export function createScriptedAgent(
           const [nightLon, nightLat] = at(0.5);
           const [lunchLon, lunchLat] = at(0.25);
           const points: PlacePoint[] = [
-            { near: "night-1", label: `Night 1 · halfway along the ${route.route_type} route`, lat: nightLat, lon: nightLon, kinds: ["stay", "food"] },
+            { near: "night-1", label: `Night 1 · halfway along the ${routeName(route.route_type)} route`, lat: nightLat, lon: nightLon, kinds: ["stay", "food"] },
             { near: "lunch-1", label: `Lunch, day 1 · a quarter of the way`, lat: lunchLat, lon: lunchLon, kinds: ["food"] },
           ];
           const wants = /\bcamp|campsite|campground/.test(lower) ? "camp" : /\bhotel|\bmotel/.test(lower) ? "room" : null;
@@ -192,7 +192,7 @@ export function createScriptedAgent(
             const mid = pointAtMile(index, index.totalMiles / 2);
             if (mid) {
               center = { lat: mid[1], lon: mid[0] };
-              label = `the midpoint of the ${route.route_type} route`;
+              label = `the midpoint of the ${routeName(route.route_type)} route`;
             }
           }
           const items = await step("search_pois", () => backend.searchPois(center.lat, center.lon));
@@ -215,7 +215,7 @@ export function createScriptedAgent(
 
         const selected = trip?.routes.find((r) => r.id === selectedRouteId);
         const status = selected
-          ? ` Route ${selected.id} (${selected.route_type}) is currently selected.`
+          ? ` Route ${selected.id} (${routeName(selected.route_type)}) is currently selected.`
           : trip
             ? " No route is selected yet."
             : "";

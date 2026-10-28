@@ -45,7 +45,7 @@ export default function Guide({ open, onClose }: Props) {
           <h3>1. Plan a trip</h3>
           <p>
             Tell the agent where you're driving, in the chat: <q>San Francisco to Los Angeles</q>. Add what matters to
-            you, like <q>leave tomorrow at 8am</q>, <q>take the backroads</q> or <q>at most 5 hours of driving a day</q>.
+            you, like <q>leave tomorrow at 8am</q>, <q>take the scenic route</q> or <q>at most 5 hours of driving a day</q>.
             No trip yet? Click a state on the map and pick a start city, then an end city.
           </p>
         </section>
@@ -53,7 +53,7 @@ export default function Guide({ open, onClose }: Props) {
         <section>
           <h3>2. Compare the routes</h3>
           <p>
-            Each trip gets a <strong>fastest</strong> and a <strong>backroads</strong> route. The cards at the top right
+            Each trip gets a <strong>fastest</strong> and a <strong>scenic</strong> route (it avoids highways). The cards at the top right
             compare drive time, distance, climbing and a scenic score, and say which highways each takes. Click a card,
             or a route on the map, to pick it.
           </p>

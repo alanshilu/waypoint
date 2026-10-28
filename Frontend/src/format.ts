@@ -35,4 +35,8 @@ export function scenicBreakdown(route: Route) {
   return { elevationDensity, score };
 }
 
-export const routeLabel = (type: string) => (type === "backroads" ? "Backroads" : "Fastest");
+// The "backroads" route type (its id in the API and the database) is shown as "Scenic"
+export const routeLabel = (type: string) => (type === "backroads" ? "Scenic" : "Fastest");
+
+/** "scenic", "fastest": the label as it reads mid-sentence and in chips such as "Select scenic". */
+export const routeName = (type: string) => routeLabel(type).toLowerCase();
