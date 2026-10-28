@@ -73,7 +73,8 @@ def test_each_stop_asks_for_rooms_campgrounds_and_food_nearest_first_within_the_
     assert by_cats["catering"]["filter"] == "circle:-119.69,35.61,5000"
     assert all(p["bias"] == "proximity:-119.69,35.61" and p["apiKey"] == "KEY" for p in get.asked)
     # credits: 1 per 20 places, so a stop's three requests cost at most 2 + 1 + 2
-    assert [p["limit"] for p in get.asked] == [40, 20, 40]
+    # (by category: the requests run in parallel, so they arrive in any order)
+    assert {cat: p["limit"] for cat, p in by_cats.items()} == {"accommodation": 40, "camping": 20, "catering": 40}
 
 
 def test_requests_are_paced_to_the_free_plans_five_a_second():
