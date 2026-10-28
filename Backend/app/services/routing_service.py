@@ -1,9 +1,11 @@
 # app/services/routing_service.py
 
+import contextvars
 import json
 from concurrent.futures import ThreadPoolExecutor
-from urllib import request, error
+from urllib import request
 from app.core.config import settings
+from app.services import ors_http
 
 URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
 
@@ -68,19 +70,13 @@ def get_single_route(start_lon: float, start_lat: float, end_lon: float, end_lat
         
     req = request.Request(URL, data=json.dumps(body).encode("utf-8"), headers=HEADERS, method="POST")
 
-    timeout = settings.ors_route_timeout_s
+    # ORS_ROUTE_TIMEOUT_S for each attempt; timeouts, 429 and 5xx are retried within ORS_ROUTE_RETRY_BUDGET_S
     try:
-        with request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:300]
-        raise RoutingError(f"OpenRouteService answered HTTP {e.code} for the {preference} route: {body}") from e
-    except TimeoutError as e:
-        raise RoutingError(f"OpenRouteService did not answer within {timeout:g} s", timed_out=True) from e
-    except error.URLError as e:
-        if isinstance(e.reason, TimeoutError):
-            raise RoutingError(f"OpenRouteService did not answer within {timeout:g} s", timed_out=True) from e
-        raise RoutingError(f"OpenRouteService is unreachable: {e.reason}") from e
+        data = ors_http.open_json(req, timeout=settings.ors_route_timeout_s,
+                                  budget_s=settings.ors_route_retry_budget_s,
+                                  what=f"the {preference} route", opener=request.urlopen)
+    except ors_http.OrsError as e:
+        raise RoutingError(str(e), timed_out=e.timed_out) from e
 
     route = data["features"][0]
     props = route["properties"]
@@ -102,10 +98,12 @@ def get_route_options(start_lon: float, start_lat: float, end_lon: float, end_la
     Generates the fastest and backroads candidates. The two ORS requests run in
     parallel, so a slow ORS costs one timeout, not two. Raises RoutingError.
     """
+    # each worker runs in a copy of this context, so the agent turn's deadline reaches both requests
     with ThreadPoolExecutor(max_workers=2) as pool:
-        fastest = pool.submit(get_single_route, start_lon, start_lat, end_lon, end_lat, preference="fastest")
+        fastest = pool.submit(contextvars.copy_context().run, get_single_route,
+                              start_lon, start_lat, end_lon, end_lat, preference="fastest")
         backroads = pool.submit(
-            get_single_route, start_lon, start_lat, end_lon, end_lat,
+            contextvars.copy_context().run, get_single_route, start_lon, start_lat, end_lon, end_lat,
             preference="shortest", avoid_features=["highways"],
         )
         return {"fastest": fastest.result(), "backroads": backroads.result()}

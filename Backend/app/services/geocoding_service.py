@@ -1,7 +1,13 @@
-import json
-from urllib import error, parse, request
+from urllib import parse, request
 
 from app.core.config import settings
+from app.services import ors_http
+
+# Seconds for one geocoding attempt, and for all attempts of one lookup together (timeouts, 429 and 5xx are
+# retried). A reverse lookup has a smaller budget: it only names a stop, and falls back to its coordinates.
+GEOCODE_TIMEOUT_S = 10
+GEOCODE_RETRY_BUDGET_S = 35
+REVERSE_GEOCODE_RETRY_BUDGET_S = 15
 
 
 def search_address(query: str) -> list[dict]:
@@ -14,12 +20,9 @@ def search_address(query: str) -> list[dict]:
 
     req = request.Request(url, headers={"Accept": "application/json"})
 
-    try:
-        with request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except error.HTTPError as e:
-        print(f"Geocoding HTTP Error: {e.code}")
-        raise ValueError(f"Failed to geocode address: {query}")
+    # Raises ors_http.OrsError (the key is in the URL, so the message never includes the URL)
+    data = ors_http.open_json(req, timeout=GEOCODE_TIMEOUT_S, budget_s=GEOCODE_RETRY_BUDGET_S,
+                              what=f"the place search for {query!r}", opener=request.urlopen)
 
     results = []
 
@@ -70,8 +73,8 @@ def reverse_geocode(lat: float, lon: float) -> str:
         headers={"Accept": "application/json"},
     )
     try:
-        with request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = ors_http.open_json(req, timeout=GEOCODE_TIMEOUT_S, budget_s=REVERSE_GEOCODE_RETRY_BUDGET_S,
+                                  what="naming a stop", opener=request.urlopen)
         props = data["features"][0]["properties"]
     except Exception:  # noqa: BLE001 - any failure falls back to coordinates
         return near_label(lat, lon)

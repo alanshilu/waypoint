@@ -13,7 +13,7 @@ from app.agent.tools import generate_route as generate_route_tool
 from app.services.route_generation import RouteGenerator, get_route_generator
 from app.core.db import get_db
 from app.main import app
-from app.services import routing_service
+from app.services import ors_http, routing_service
 from app.services.routing_service import RoutingError
 
 
@@ -45,6 +45,7 @@ def test_ors_failures_become_routing_errors(monkeypatch, raised, timed_out):
     def failing_urlopen(*args, **kwargs):
         raise raised
 
+    monkeypatch.setattr(ors_http, "sleep", lambda s: None)  # timeouts and 503 are retried first
     monkeypatch.setattr(routing_service.request, "urlopen", failing_urlopen)
     with pytest.raises(RoutingError) as caught:
         routing_service.get_single_route(0, 0, 1, 1)

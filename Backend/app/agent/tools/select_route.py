@@ -1,15 +1,15 @@
 import requests
 from app.agent.tools.geocode_location import BASE_URL
+from app.agent.tools import http
 from app.agent.tools.http import check
-from app.core.internal import internal_headers
 
 
 def select_route(route_id: int) -> dict:
     """Mark a specific route as the trip's chosen route."""
     response = requests.post(
         f"{BASE_URL}/routes/select/{route_id}",
-        headers=internal_headers(),
-        timeout=10,
+        headers=http.headers(internal=True),
+        timeout=http.timeout(10),
     )
     check(response)
     return response.json()

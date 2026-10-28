@@ -1,9 +1,9 @@
 import requests
 
+from app.agent.tools import http
 from app.agent.tools.geocode_location import BASE_URL
 from app.agent.tools.http import check
 from app.core.config import settings
-from app.core.internal import internal_headers
 
 
 def generate_routes(trip_id: int, force: bool = False) -> dict:
@@ -14,12 +14,12 @@ def generate_routes(trip_id: int, force: bool = False) -> dict:
     response = requests.post(
         f"{BASE_URL}/routes/generate/{trip_id}",
         params={"reuse_existing": "false" if force else "true"},
-        headers=internal_headers(),
-        # outlast the backend's own ORS timeout, so the backend's 504 arrives instead of a client timeout
-        timeout=settings.ors_route_timeout_s + 30,
+        headers=http.headers(internal=True),
+        # outlast the backend's ORS retries, so the backend's 502/504 and its reason arrive, not a client timeout
+        timeout=http.timeout(settings.ors_route_retry_budget_s + 30),
     )
     if response.status_code in (502, 504):
-        # the route service failed; give the model the reason rather than a bare HTTP error
+        # the route service failed: a failed call, with the reason rather than a bare HTTP error
         return {"error": response.json().get("detail", response.text)}
     check(response)
     return response.json()

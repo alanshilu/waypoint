@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+
 from app.services.geocoding_service import search_address
+from app.services.ors_http import OrsError
 
 router = APIRouter()
+
 
 @router.get("/search")
 def geocode_location(
@@ -12,12 +15,7 @@ def geocode_location(
     """
     try:
         results = search_address(q)
-        if not results:
-            return {"status": "success", "results": []}
-            
-        return {
-            "status": "success",
-            "results": results
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except OrsError as e:
+        # The geocoder failing is an upstream problem: 504 when it timed out, else 502, with its reason
+        raise HTTPException(status_code=504 if e.timed_out else 502, detail=str(e))
+    return {"status": "success", "results": results}

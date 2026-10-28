@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     weather_cache_path: str = Field(default="/tmp/waypoint_weather_cache", validation_alias="WEATHER_CACHE_PATH")
     # Seconds to wait for one OpenRouteService directions request; long drives can take a minute when ORS is busy
     ors_route_timeout_s: float = Field(default=90.0, validation_alias="ORS_ROUTE_TIMEOUT_S")
+    # Seconds for all attempts at one route together: a timeout, 429 or 5xx is retried (up to 3 attempts, with
+    # backoff) while another attempt fits. An agent turn's own deadline (AGENT_TIMEOUT_S) cuts it shorter.
+    ors_route_retry_budget_s: float = Field(default=300.0, validation_alias="ORS_ROUTE_RETRY_BUDGET_S")
 
     # Browser origins allowed by CORS, comma-separated: the Vite dev server plus
     # the deployed frontend, e.g. "http://localhost:5173,https://waypoint.example.com"
@@ -83,6 +86,15 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _route_retries_fit_in_a_turn(self):
+        if self.ors_route_retry_budget_s < self.ors_route_timeout_s:
+            raise ValueError("ORS_ROUTE_RETRY_BUDGET_S must be at least ORS_ROUTE_TIMEOUT_S (one attempt)")
+        if self.ors_route_retry_budget_s >= self.agent_timeout_s:
+            raise ValueError("ORS_ROUTE_RETRY_BUDGET_S must be less than AGENT_TIMEOUT_S, or route retries outlast "
+                             "the agent turn")
+        return self
 
     @model_validator(mode="after")
     def _needs_a_database(self):

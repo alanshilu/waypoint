@@ -1,19 +1,27 @@
 import requests
 
+from app.agent.tools import http
 from app.agent.tools.geocode_location import BASE_URL
 from app.agent.tools.http import check
 
-# Connect timeout only: the search waits for OpenStreetMap however long it takes, and the app tells the user
+# Connect timeout; the read waits for OpenStreetMap however long it takes, up to the end of the agent turn
 CONNECT_TIMEOUT_S = 10
 
 
 def find_places(points: list[dict]) -> dict:
     """Campsites and places to eat near the trip's stops, ranked, from OpenStreetMap."""
-    response = requests.post(f"{BASE_URL}/places/search", json={"points": points}, timeout=(CONNECT_TIMEOUT_S, None))
+    response = requests.post(f"{BASE_URL}/places/search", json={"points": points}, headers=http.headers(),
+                             timeout=(CONNECT_TIMEOUT_S, http.timeout(None)))
     if response.status_code in (400, 422):
         return {"error": response.json().get("detail", response.text)}
     check(response)
-    return response.json()
+    result = response.json()
+    groups = result.get("groups") or []
+    failed = [g for g in groups if g.get("source") == "none" and g.get("note")]
+    if groups and len(failed) == len(groups):
+        # every search failed (each group says why): a failed call, not an empty answer
+        return {"error": f"Place search failed: {failed[0]['note']}"}
+    return result
 
 
 TOOL_SCHEMA = {

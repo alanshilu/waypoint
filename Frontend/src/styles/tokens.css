@@ -18,6 +18,8 @@
   --route-other: var(--espresso);
   --positive: var(--olive);
   --warning: var(--gold);
+  /* a failed step; parchment-light on it is about 7:1 */
+  --negative: #A3261B;
 
   /* Type */
   --font-heading: "Fraunces", Georgia, serif;

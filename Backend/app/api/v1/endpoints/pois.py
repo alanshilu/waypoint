@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.core.db import get_db
+from app.services.ors_http import OrsError
 from app.services.poi_service import fetch_pois_from_ors, get_saved_pois, save_pois_to_db
 from app.utils.bbox import boundingBox
 from app.api.v1.serializers import poi_to_dict
@@ -55,5 +56,7 @@ def search_and_save_pois(
             "pois": response_pois
         }
 
+    except OrsError as e:
+        raise HTTPException(status_code=504 if e.timed_out else 502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

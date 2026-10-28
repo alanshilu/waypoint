@@ -1,5 +1,5 @@
 import json
-from urllib import request, error
+from urllib import request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from shapely.geometry import Point
@@ -7,8 +7,12 @@ from geoalchemy2.shape import from_shape
 
 from app.core.config import settings
 from app.models.poi import POI
+from app.services import ors_http
 
 URL = "https://api.openrouteservice.org/pois"
+# Seconds for one attempt, and for all attempts of one search together
+POI_TIMEOUT_S = 30
+POI_RETRY_BUDGET_S = 75
 SOURCE = "openrouteservice"
 UNNAMED = "Unknown Location"  # placeholder older rows were saved with
 HEADERS = {
@@ -61,16 +65,11 @@ def fetch_pois_from_ors(min_lon: float, min_lat: float, max_lon: float, max_lat:
 
     req = request.Request(URL, data=json.dumps(body).encode("utf-8"), headers=HEADERS, method="POST")
 
-    try:
-        with request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            
-        features = data.get("features", [])
-        return [f for f in features if has_road_trip_category(f)]
-        
-    except error.HTTPError as e:
-        print(f"HTTP {e.code} {e.reason}")
-        raise ValueError("Failed to fetch POIs from OpenRouteService")
+    # timeouts, 429 and 5xx are retried; raises ors_http.OrsError
+    data = ors_http.open_json(req, timeout=POI_TIMEOUT_S, budget_s=POI_RETRY_BUDGET_S, what="the POI search",
+                              opener=request.urlopen)
+    features = data.get("features", [])
+    return [f for f in features if has_road_trip_category(f)]
 
 def get_saved_pois(db: Session, min_lon: float, min_lat: float, max_lon: float, max_lat: float, limit: int = 500) -> list[POI]:
     """Reads already-saved POIs inside a bounding box. No external API call."""

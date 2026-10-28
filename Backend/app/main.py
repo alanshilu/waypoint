@@ -7,8 +7,12 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.endpoints import agent, health, location, places, pois, routes, trips, weather
 from app.core.config import settings
+from app.services.deadline import DeadlineMiddleware
 
 app = FastAPI()
+
+# The agent turn's deadline, from the X-Waypoint-Deadline header its tools send, so retries stop in time
+app.add_middleware(DeadlineMiddleware)
 
 # Browser origins come from settings (CORS_ORIGINS): the Vite dev server and the deployed frontend
 app.add_middleware(

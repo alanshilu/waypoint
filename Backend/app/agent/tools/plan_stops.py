@@ -1,6 +1,7 @@
 import requests
 
 from app.agent.tools.geocode_location import BASE_URL
+from app.agent.tools import http
 from app.agent.tools.http import check
 
 
@@ -11,7 +12,9 @@ def plan_stops(trip_id: int, route_id: int, start: str | None = None, max_hours:
         params["start"] = start
     if max_hours:
         params["max_hours"] = max_hours
-    response = requests.post(f"{BASE_URL}/trips/{trip_id}/plan", params=params, timeout=90)
+    response = requests.post(f"{BASE_URL}/trips/{trip_id}/plan", params=params, headers=http.headers(),
+                             # each stop is named by the geocoder, which retries a failing request
+                             timeout=http.timeout(180))
     if response.status_code in (400, 404, 422):
         return {"error": response.json().get("detail", response.text)}
     check(response)

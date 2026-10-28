@@ -21,6 +21,7 @@ from app.agent.answer import FINAL_ANSWER_SCHEMA, parse_final_answer, refusal_an
 from app.agent.model_view import model_view, truncate
 from app.agent.prompt import SYSTEM_PROMPT
 from app.core.config import settings
+from app.services import deadline
 
 MAX_TOKENS = 16000
 # A runaway loop is a bug; stop instead of spending.
@@ -116,6 +117,18 @@ class AnthropicClients:
             yield own
 
 
+def failure_reason(result: Any) -> str | None:
+    """
+    Why a tool's answer is a failure, or None. Tools report a failure they handled (the route service timed
+    out, no place matched, every place search failed) as {"error": reason}; that call failed, and the chat
+    checklist and the trace show it as failed, with the reason.
+    """
+    if isinstance(result, dict) and result.get("error"):
+        reason = result["error"]
+        return reason if isinstance(reason, str) else json.dumps(reason, default=str)
+    return None
+
+
 def _cache_key(name: str, args: dict) -> str:
     return name + ":" + json.dumps(args, sort_keys=True, default=str)
 
@@ -151,18 +164,23 @@ class Agent:
 
         Returns an AgentTurn. Pass turn.messages back in as conversation_history on
         the next call so the agent keeps context across turns.
+
+        The turn's deadline (AGENT_TIMEOUT_S from now) goes with every tool call, so a slow service and its
+        retries stop before the turn does.
         """
-        with self.clients.open(api_key) as client:
+        with deadline.until(time.time() + settings.agent_timeout_s), self.clients.open(api_key) as client:
             return self._run_turn(client, conversation_history, user_message, on_event or (lambda event: None))
 
     def _run_tool(self, name: str, args: dict) -> tuple[Any, str | None]:
+        """(result, error). A tool that answers {"error": reason} failed too, as much as one that raised."""
         func = self.tools.get(name)
         if func is None:
             return None, f"Unknown tool {name!r}; available: {', '.join(sorted(self.tools))}"
         try:
-            return func(**args), None
+            result = func(**args)
         except Exception as e:  # noqa: BLE001 - reported to the model as a tool error
             return None, f"{type(e).__name__}: {e}"
+        return result, failure_reason(result)
 
     def _run_turn(self, client, conversation_history: list, user_message: str, emit: Callable[[dict], None]) -> AgentTurn:
         messages = conversation_history + [{"role": "user", "content": user_message}]

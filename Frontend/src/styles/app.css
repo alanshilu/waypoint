@@ -65,6 +65,12 @@ button:disabled {
   border-bottom: 2px solid var(--warning);
 }
 
+/* a failed tool call in the trace */
+.trace-failed {
+  color: var(--negative);
+  font-weight: 600;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -502,8 +508,13 @@ button:disabled {
 }
 
 .step.error .step-mark {
-  background: var(--warning);
-  border-color: var(--warning);
+  background: var(--negative);
+  border-color: var(--negative);
+  color: var(--parchment-light);
+}
+
+.step.error .step-tool {
+  color: var(--negative);
 }
 
 .step.running .step-mark {
@@ -523,8 +534,8 @@ button:disabled {
 /* why a tool failed, on its own line under the step */
 .step-error {
   grid-column: 2 / -1;
-  font-size: 11px;
-  color: var(--ink-muted);
+  font-size: 12px;
+  color: var(--espresso);
   overflow-wrap: anywhere;
 }
 
