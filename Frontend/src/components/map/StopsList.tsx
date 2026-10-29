@@ -1,4 +1,5 @@
 import type { PoiResult } from "../../types";
+import { ListHeading, useCollapsible } from "../Collapsible";
 
 interface Props {
   stops: PoiResult;
@@ -8,12 +9,13 @@ interface Props {
 
 /** The stops beside the map, numbered like their markers. */
 export default function StopsList({ stops, hovered, onHover }: Props) {
+  const fold = useCollapsible();
   return (
     <section className="poi-list" aria-label="Stops">
-      <h2>
+      <ListHeading {...fold}>
         Stops near {stops.label} <span className="data">({stops.items.length})</span>
-      </h2>
-      <ol>
+      </ListHeading>
+      <ol hidden={!fold.open}>
         {stops.items.map((poi) => (
           <li
             key={poi.id}

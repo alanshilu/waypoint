@@ -11,12 +11,17 @@
   --parchment-light: #F8F0DA;
   --hairline: rgba(58, 36, 24, 0.22);
   --hairline-faint: rgba(58, 36, 24, 0.1);
-  --ink-muted: rgba(58, 36, 24, 0.62);
+  /* 0.74: at least 5:1 on every panel and map tone (0.62 was 3.7-4.1:1, under WCAG AA's 4.5) */
+  --ink-muted: rgba(58, 36, 24, 0.74);
 
   /* Meaning */
   --route-selected: var(--rust);
   --route-other: var(--espresso);
   --positive: var(--olive);
+  /* olive as text: 6.2:1 on parchment-light (the olive itself is 4.5:1, too light for small text) */
+  --positive-ink: #565C3A;
+  /* rust as text: 6.1:1 on parchment-light (the rust itself is 4.3:1) */
+  --rust-ink: #93421F;
   --warning: var(--gold);
   /* a failed step; parchment-light on it is about 7:1 */
   --negative: #A3261B;

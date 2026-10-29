@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { placeGlyph } from "../placeGlyph";
+import { ListHeading, useCollapsible } from "./Collapsible";
 import type { PlaceGroup, PlaceOption } from "../types";
 
 interface Props {
@@ -17,6 +18,7 @@ const KIND_NONE = { stay: "places to stay", food: "places to eat" } as const;
 /** The agent's picks of where to stay and eat per stop, with the other options found, as a list beside the map. */
 export default function PlacesPanel({ groups, hovered, onHover }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const fold = useCollapsible();
 
   // One section per stop, in the order the agent searched them
   const sections: { label: string; groups: PlaceGroup[] }[] = [];
@@ -48,8 +50,8 @@ export default function PlacesPanel({ groups, hovered, onHover }: Props) {
 
   return (
     <section className="places-panel" aria-label="Where to stay and eat">
-      <h2>Where to stay and eat</h2>
-      <div className="places-scroll">
+      <ListHeading {...fold}>Where to stay and eat</ListHeading>
+      <div className="places-scroll" hidden={!fold.open}>
         {sections.map((section) => (
           <div key={section.label} className="places-section">
             <h3>{section.label}</h3>

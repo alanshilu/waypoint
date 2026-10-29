@@ -7,7 +7,7 @@ import type { GeometryCollection, Topology } from "topojson-specification";
 import usAtlas from "us-atlas/states-10m.json";
 import { CALLOUT_POINTS, LABEL_POINTS, STATE_CODE_BY_FIPS } from "../../data/states";
 import { CARDS_HEIGHT, CARDS_WIDTH, HEADER_HEIGHT } from "./layout";
-import type { FitMode } from "./layout";
+import type { FitMode, Stacked } from "./layout";
 
 // Lower 48 + DC: drop Alaska (02), Hawaii (15), Puerto Rico (72) and the
 // other territories us-atlas ships (FIPS above 56).
@@ -41,15 +41,18 @@ interface FitInput {
   hasRoutes: boolean;
   /** Width of the list on the left, 0 when none is showing */
   leftPanelWidth: number;
+  /** The stacked (phone and tablet) layout's overlays; null on a wide screen */
+  stacked?: Stacked | null;
 }
 
 /** The projection that fits the view (the lower 48, the routes or the stops) into the map, clear of the overlays. */
-export function useFittedProjection({ width, height, view, routeLines, stopPoints, hasRoutes, leftPanelWidth }: FitInput): GeoProjection | null {
+export function useFittedProjection({ width, height, view, routeLines, stopPoints, hasRoutes, leftPanelWidth, stacked }: FitInput): GeoProjection | null {
+  const headerHeight = stacked?.headerHeight ?? 0;
   return useMemo(() => {
     if (width === 0 || height === 0) return null;
     const zoomed = view !== "usa";
     const side = zoomed ? 70 : 24;
-    const left = leftPanelWidth || side;
+    const left = stacked ? side : leftPanelWidth || side;
     const bottom = zoomed ? 50 : 24;
     let target: GeoPermissibleObjects = lower48;
     if (view === "route") {
@@ -74,13 +77,18 @@ export function useFittedProjection({ width, height, view, routeLines, stopPoint
         ],
         target,
       );
+    if (stacked) {
+      // below the header (with room for a city label drawn above its marker), across the whole width
+      const top = headerHeight + 30;
+      return geoAlbers().fitExtent([[left, top], [Math.max(left + 1, width - side), Math.max(top + 1, height - bottom)]], target);
+    }
     if (!hasRoutes) return fit(24, side);
     // The comparison cards overlay the top right corner. Keep the map clear of
     // them either by fitting below or beside them, whichever draws it larger.
     const below = fit(CARDS_HEIGHT, side);
     const beside = fit(HEADER_HEIGHT, CARDS_WIDTH);
     return below.scale() >= beside.scale() ? below : beside;
-  }, [width, height, view, routeLines, stopPoints, hasRoutes, leftPanelWidth]);
+  }, [width, height, view, routeLines, stopPoints, hasRoutes, leftPanelWidth, stacked !== null && stacked !== undefined, headerHeight]);
 }
 
 export interface StateShape {

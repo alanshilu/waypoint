@@ -82,7 +82,8 @@ export function createHttpBackend(base: string): HttpBackend {
   /** fetch, waiting out a sleeping backend's cold start instead of failing (see serverStatus.ts). */
   async function fetchWaking(path: string, init?: RequestInit): Promise<Response | null> {
     const wake = canSleep && mayBeAsleep();
-    const slow = wake ? setTimeout(markWaking, SLOW_MS) : undefined;
+    // the banner shows only while nothing has answered: another call reaching the server ends it
+    const slow = wake ? setTimeout(() => mayBeAsleep() && markWaking(), SLOW_MS) : undefined;
     const deadline = Date.now() + WAKE_TIMEOUT_MS;
     try {
       for (let attempt = 0; ; attempt++) {
@@ -97,9 +98,12 @@ export function createHttpBackend(base: string): HttpBackend {
           return response;
         }
         if (!wake || Date.now() + 2000 > deadline) {
-          if (wake) markGaveUp();
+          if (wake && mayBeAsleep()) markGaveUp();
           return response;
         }
+        // Another call got an answer meanwhile, so the server is up: this one failed for its own reasons
+        // (the warm-up ping blocked, say). Don't keep retrying or put the "waking up" banner back.
+        if (!mayBeAsleep()) return response;
         markWaking();
         await sleep(Math.min(2000 * 2 ** attempt, 8000));
       }

@@ -52,14 +52,17 @@ interface LabelsProps {
   picking: boolean;
   hoveredState: string | null;
   pinnedState: string | null;
+  /** A phone-sized map: the small states' labels and the Atlantic callouts would pile up, so only open ones show */
+  compact?: boolean;
 }
 
 /** State codes (full names when hovered or opened), below the routes and markers and never in the pointer's way. */
-export function StateLabels({ states, picking, hoveredState, pinnedState }: LabelsProps) {
+export function StateLabels({ states, picking, hoveredState, pinnedState, compact = false }: LabelsProps) {
   return (
     <g className="state-labels" aria-hidden="true">
       {states.map((s) => {
         const full = s.id === hoveredState || (picking && s.id === pinnedState);
+        if (compact && (s.small || s.callout) && !full) return null;
         const classes = ["state-label"];
         if (s.small || s.callout) classes.push("small");
         if (s.callout) classes.push("callout");

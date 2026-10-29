@@ -11,7 +11,10 @@ import type { StepView } from "../types";
 import OwnKeyPanel from "./OwnKeyPanel";
 import ServerWaking from "./ServerWaking";
 
-const STARTER_CHIPS = ["San Francisco to Los Angeles"];
+// The mock agent only knows San Francisco to Los Angeles; the real one takes any US drive
+const STARTER_CHIPS = MOCK_REPLIES
+  ? ["San Francisco to Los Angeles"]
+  : ["San Francisco to Los Angeles", "Dallas to Minneapolis, leave tomorrow at 8am", "Seattle to Portland on the scenic route"];
 
 const STATUS_LABEL: Record<StepView["status"], string> = {
   running: "running",

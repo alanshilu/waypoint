@@ -51,11 +51,18 @@ interface PlaceInput {
   blocked: [number, number][];
   /** Screen areas under the overlays */
   covered: Rect[];
+  /** A phone-sized map: fewer shields, further apart, so they stay readable and don't overlap */
+  narrow?: boolean;
 }
 
+// On a phone-sized map: at most this many shields besides the selected route's, spaced this much wider
+const NARROW_MAX_SHIELDS = 8;
+const NARROW_SPACING_FACTOR = 1.35;
+
 /** Where the shields go: the selected route's highways first, then the rest of the network, spaced out greedily. */
-export function placeShields({ projection, highways, onRoute, closeUp, width, height, blocked, covered }: PlaceInput): Shield[] {
-  const spacing = closeUp ? SPACING.closeUp : SPACING.usa;
+export function placeShields({ projection, highways, onRoute, closeUp, width, height, blocked, covered, narrow = false }: PlaceInput): Shield[] {
+  const spacing = (closeUp ? SPACING.closeUp : SPACING.usa) * (narrow ? NARROW_SPACING_FACTOR : 1);
+  const maxShields = narrow ? NARROW_MAX_SHIELDS : MAX_SHIELDS;
   const placed: Shield[] = [];
   const onRouteIds = new Set(onRoute.map((h) => h.highway.id));
   const onScreen = (x: number, y: number) =>
@@ -85,7 +92,7 @@ export function placeShields({ projection, highways, onRoute, closeUp, width, he
         parseInt(a.number, 10) - parseInt(b.number, 10),
     );
   for (const highway of rest) {
-    if (placed.length >= MAX_SHIELDS) break;
+    if (placed.length >= maxShields) break;
     for (const point of candidates(highway)) {
       const xy = projection(point);
       if (xy && onScreen(xy[0], xy[1]) && clear(xy[0], xy[1], spacing)) {

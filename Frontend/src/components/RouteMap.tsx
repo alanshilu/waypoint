@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { geoPath } from "d3-geo";
 import { buildMileIndex, nearestMile, simplifyLine } from "../geo";
 import { useTrip } from "../state/TripProvider";
@@ -12,7 +12,7 @@ import CityPopover from "./CityPopover";
 import PlacesPanel from "./PlacesPanel";
 import DirectionsPanel from "./DirectionsPanel";
 import { useFittedProjection, useStateShapes } from "./map/fit";
-import { CARDS_HEIGHT, coveredRects, PLACES_LIST_WIDTH, STOPS_LIST_WIDTH } from "./map/layout";
+import { CARDS_HEIGHT, coveredRects, NARROW_MAP_PX, PLACES_LIST_WIDTH, STOPS_LIST_WIDTH, useStackedLayout } from "./map/layout";
 import type { FitMode } from "./map/layout";
 import { useCityPicker } from "./map/useCityPicker";
 import { StateLabels, StatesLayer } from "./map/StatesLayer";
@@ -108,12 +108,28 @@ export default function RouteMap() {
   }, [directionsRoute]);
   // the list on the left: directions while open, else the places list, else the stops list
   const leftPanelWidth = showDirections || hasPlaces ? PLACES_LIST_WIDTH : stops ? STOPS_LIST_WIDTH : 0;
+  // On phones and tablets that list covers the bottom of the map instead, and the header spans its top
+  const isStacked = useStackedLayout();
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useLayoutEffect(() => {
+    const header = document.querySelector<HTMLElement>(".route-map .map-header");
+    if (!header) return;
+    const measure = () => setHeaderHeight(header.offsetTop + header.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [isStacked]);
+  // stacked, the lists sit under the map, so nothing but the header covers it
+  const stacked = useMemo(() => (isStacked ? { headerHeight } : null), [isStacked, headerHeight]);
+  // a phone-sized map thins out its labels and highway badges
+  const narrow = width > 0 && width < NARROW_MAP_PX;
 
   // The fitted view, then zoom and pan on top of it
   const routeLines = useMemo(() => routes.map((r) => r.line), [routes]);
   // the stops, and the campsites and places to eat picked near them
   const stopPoints = useMemo(() => (stops ? [...stops.items, ...picks] : []), [stops, picks]);
-  const fitted = useFittedProjection({ width, height, view, routeLines, stopPoints, hasRoutes, leftPanelWidth });
+  const fitted = useFittedProjection({ width, height, view, routeLines, stopPoints, hasRoutes, leftPanelWidth, stacked });
   const svgRef = useRef<SVGSVGElement>(null);
   const zoom = useMapZoom(svgRef, fitted, { width, height });
   const projection = zoom.projection;
@@ -138,8 +154,10 @@ export default function RouteMap() {
         [lon - dLon, lat - dLat],
         [lon + dLon, lat + dLat],
       ],
-      // below the route cards, right of the directions list
-      { x0: leftPanelWidth + 30, y0: CARDS_HEIGHT, x1: width - 30, y1: height - 30 },
+      // below the route cards, right of the directions list; stacked: below the header, above the list
+      stacked
+        ? { x0: 30, y0: stacked.headerHeight + 10, x1: width - 30, y1: height - 30 }
+        :{ x0: leftPanelWidth + 30, y0: CARDS_HEIGHT, x1: width - 30, y1: height - 30 },
     );
   };
 
@@ -159,9 +177,9 @@ export default function RouteMap() {
     const blocked = (trip ? [trip.origin, trip.destination] : [])
       .map((p) => projection([p.lon, p.lat]))
       .filter((xy): xy is [number, number] => xy !== null);
-    const covered = coveredRects(width, height, hasRoutes, leftPanelWidth);
-    return placeShields({ projection, highways, onRoute, closeUp, width, height, blocked, covered });
-  }, [projection, highways, onRoute, closeUp, width, height, trip, hasRoutes, leftPanelWidth]);
+    const covered = coveredRects(width, height, hasRoutes, leftPanelWidth, stacked);
+    return placeShields({ projection, highways, onRoute, closeUp, width, height, blocked, covered, narrow });
+  }, [projection, highways, onRoute, closeUp, width, height, trip, hasRoutes, leftPanelWidth, stacked, narrow]);
   const route66At = useMemo(() => (projection ? route66LabelAt(projection, width, height) : null), [projection, width, height]);
 
   const path = projection ? geoPath(projection) : null;
@@ -191,8 +209,11 @@ export default function RouteMap() {
     hoveredRouteId ?? selectedRouteId ?? routes.find((r) => r.route.route_type === "fastest")?.route.id ?? null;
   const popoverState = picking && !picker.destination && shapes ? shapes.states.find((s) => s.id === (picker.pinnedState ?? picker.hoveredState)) : undefined;
 
+  // The map itself is drawn in route-map-canvas (measured for the SVG). The lists are its siblings: over the map on
+  // a desktop, under it (after the route cards and the elevation chart) in the stacked layout.
   return (
-    <div className="route-map" ref={ref}>
+    <div className="route-map">
+      <div className="route-map-canvas" ref={ref}>
       {projection && path && shapes && (
         <svg
           ref={svgRef}
@@ -213,7 +234,13 @@ export default function RouteMap() {
               interactive={!picking}
             />
           )}
-          <StateLabels states={shapes.states} picking={picking} hoveredState={picker.hoveredState} pinnedState={picker.pinnedState} />
+          <StateLabels
+            states={shapes.states}
+            picking={picking}
+            hoveredState={picker.hoveredState}
+            pinnedState={picker.pinnedState}
+            compact={narrow && !closeUp}
+          />
           <RouteLines
             routes={ordered}
             selectedRouteId={selectedRouteId}
@@ -261,23 +288,6 @@ export default function RouteMap() {
 
       <ZoomControls zoom={zoom} />
 
-      {showDirections && directionsRoute ? (
-        <DirectionsPanel
-          routeType={directionsRoute.route_type}
-          directions={directions}
-          distanceMiles={directionsRoute.distance_miles}
-          durationSeconds={directionsRoute.duration_seconds}
-          active={activeStep}
-          onSelect={showStep}
-          onHover={setHoveredStep}
-          onClose={() => setDirectionsOpen(false)}
-        />
-      ) : places && places.length > 0 ? (
-        <PlacesPanel groups={places} hovered={hoveredPlace} onHover={setHoveredPlace} />
-      ) : (
-        stops && <StopsList stops={stops} hovered={hoveredPoi} onHover={setHoveredPoi} />
-      )}
-
       {popoverState && (
         <CityPopover
           stateName={popoverState.name}
@@ -305,6 +315,24 @@ export default function RouteMap() {
         <p className="map-error" role="alert">
           {error}
         </p>
+      )}
+      </div>
+
+      {showDirections && directionsRoute ? (
+        <DirectionsPanel
+          routeType={directionsRoute.route_type}
+          directions={directions}
+          distanceMiles={directionsRoute.distance_miles}
+          durationSeconds={directionsRoute.duration_seconds}
+          active={activeStep}
+          onSelect={showStep}
+          onHover={setHoveredStep}
+          onClose={() => setDirectionsOpen(false)}
+        />
+      ) : places && places.length > 0 ? (
+        <PlacesPanel groups={places} hovered={hoveredPlace} onHover={setHoveredPlace} />
+      ) : (
+        stops && <StopsList stops={stops} hovered={hoveredPoi} onHover={setHoveredPoi} />
       )}
     </div>
   );
