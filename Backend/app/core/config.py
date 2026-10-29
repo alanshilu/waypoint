@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
+
+log = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -45,8 +48,9 @@ class Settings(BaseSettings):
     # Seconds to wait for one OpenRouteService directions request; long drives can take a minute when ORS is busy
     ors_route_timeout_s: float = Field(default=90.0, validation_alias="ORS_ROUTE_TIMEOUT_S")
     # Seconds for all attempts at one route together: a timeout, 429 or 5xx is retried (up to 3 attempts, with
-    # backoff) while another attempt fits. An agent turn's own deadline (AGENT_TIMEOUT_S) cuts it shorter.
-    ors_route_retry_budget_s: float = Field(default=300.0, validation_alias="ORS_ROUTE_RETRY_BUDGET_S")
+    # backoff) while another attempt fits. Unset: three attempts' worth. Either way at most half of
+    # AGENT_TIMEOUT_S (see ors_route_retry_budget_s), and an agent turn's own deadline cuts it shorter still.
+    ors_route_retry_budget_env: float | None = Field(default=None, gt=0, validation_alias="ORS_ROUTE_RETRY_BUDGET_S")
 
     # Browser origins allowed by CORS, comma-separated: the Vite dev server plus
     # the deployed frontend, e.g. "http://localhost:5173,https://waypoint.example.com"
@@ -89,13 +93,21 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    @property
+    def ors_route_retry_budget_s(self) -> float:
+        """
+        Seconds for all attempts at one route: ORS_ROUTE_RETRY_BUDGET_S, or three attempts' worth when it's unset,
+        never more than half of AGENT_TIMEOUT_S, so the model calls and the other tools keep the other half of the
+        turn. Never a reason to refuse to start: a value too large for the turn is lowered (and logged once).
+        """
+        wanted = self.ors_route_retry_budget_env or self.ors_route_timeout_s * 3 + 30
+        return min(wanted, self.agent_timeout_s / 2)
+
     @model_validator(mode="after")
-    def _route_retries_fit_in_a_turn(self):
-        if self.ors_route_retry_budget_s < self.ors_route_timeout_s:
-            raise ValueError("ORS_ROUTE_RETRY_BUDGET_S must be at least ORS_ROUTE_TIMEOUT_S (one attempt)")
-        if self.ors_route_retry_budget_s >= self.agent_timeout_s:
-            raise ValueError("ORS_ROUTE_RETRY_BUDGET_S must be less than AGENT_TIMEOUT_S, or route retries outlast "
-                             "the agent turn")
+    def _say_when_route_retries_are_cut(self):
+        if self.ors_route_retry_budget_env and self.ors_route_retry_budget_env > self.agent_timeout_s / 2:
+            log.warning("ORS_ROUTE_RETRY_BUDGET_S=%g is more than half of AGENT_TIMEOUT_S=%g; using %g s",
+                        self.ors_route_retry_budget_env, self.agent_timeout_s, self.ors_route_retry_budget_s)
         return self
 
     @model_validator(mode="after")
@@ -126,6 +138,9 @@ class Settings(BaseSettings):
         env_file=(Path(__file__).resolve().parents[3] / ".env.local", Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        # A settings error names the field and the rule, never the values: they hold the database URL and API
+        # keys, and the error goes to the host's logs
+        hide_input_in_errors=True,
     )
 
     @staticmethod

@@ -254,12 +254,38 @@ def test_the_deadline_header_reaches_the_endpoint(monkeypatch):
     assert 55 < seen[0] <= 60 and seen[1] is None
 
 
-def test_route_retries_must_fit_inside_the_agent_timeout():
+def settings_with(monkeypatch, **env):
     from app.core.config import Settings
 
-    with pytest.raises(ValueError, match="less than AGENT_TIMEOUT_S"):
-        Settings(_env_file=None, DATABASE_URL="postgresql://u:p@h/d", ORS_API_KEY="k",
-                 AGENT_TIMEOUT_S=200, ORS_ROUTE_RETRY_BUDGET_S=300)
+    for name in ("AGENT_TIMEOUT_S", "ORS_ROUTE_RETRY_BUDGET_S", "ORS_ROUTE_TIMEOUT_S"):
+        monkeypatch.delenv(name, raising=False)
+    return Settings(_env_file=None, DATABASE_URL="postgresql://u:p@h/d", ORS_API_KEY="k", **env)
+
+
+def test_route_retry_budget_defaults_to_three_attempts(monkeypatch):
+    assert settings_with(monkeypatch).ors_route_retry_budget_s == 300  # 3 x 90 s + 30 s of backoff
+
+
+def test_route_retries_fit_in_half_the_agent_turn_and_never_stop_the_app(monkeypatch, caplog):
+    # a host that shortens the turn but leaves the retry budget unset (it crashed at startup before)
+    assert settings_with(monkeypatch, AGENT_TIMEOUT_S=120).ors_route_retry_budget_s == 60
+    # one set too large for the turn is lowered, and said so
+    with caplog.at_level("WARNING", logger="app.core.config"):
+        s = settings_with(monkeypatch, AGENT_TIMEOUT_S=60, ORS_ROUTE_RETRY_BUDGET_S=59)
+    assert s.ors_route_retry_budget_s == 30
+    assert "more than half of AGENT_TIMEOUT_S" in caplog.text
+    assert settings_with(monkeypatch, AGENT_TIMEOUT_S=60, ORS_ROUTE_RETRY_BUDGET_S=20).ors_route_retry_budget_s == 20
+
+
+def test_settings_errors_never_show_the_values(monkeypatch):
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    monkeypatch.delenv("ORS_API_KEY", raising=False)
+    with pytest.raises(ValidationError) as caught:
+        Settings(_env_file=None, DATABASE_URL="postgresql://u:hunter2-secret@h/d")
+    assert "hunter2-secret" not in str(caught.value)
 
 
 # --- failed tool calls show as failed ----------------------------------------------------------------------
