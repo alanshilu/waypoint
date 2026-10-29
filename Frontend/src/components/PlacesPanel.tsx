@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { placeMapsUrl } from "../export";
 import { placeGlyph } from "../placeGlyph";
 import { ListHeading, useCollapsible } from "./Collapsible";
 import type { PlaceGroup, PlaceOption } from "../types";
@@ -38,7 +39,11 @@ export default function PlacesPanel({ groups, hovered, onHover }: Props) {
       <span className={`place-glyph ${placeGlyph(place)}`} aria-hidden="true" />
       <span className="place-name">
         {place.recommended && <span className="sr-only">Recommended: </span>}
-        {place.name}
+        {/* reviews, photos and hours are on Google Maps; OpenStreetMap has none */}
+        <a className="place-link" href={placeMapsUrl(place)} target="_blank" rel="noreferrer" title="Reviews and photos on Google Maps">
+          {place.name}
+          <span className="sr-only"> (reviews and photos on Google Maps, opens in a new tab)</span>
+        </a>
         {place.recommended && place.reason && <span className="place-reason">{place.reason}</span>}
         {!place.recommended && place.facts.length > 0 && (
           <span className="place-facts">{place.facts.slice(0, 3).join(" · ")}</span>

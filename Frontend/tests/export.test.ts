@@ -1,7 +1,7 @@
 // Run with `npm test` (Node's own test runner; Node strips the TypeScript types).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GOOGLE_MAPS_MAX_WAYPOINTS, googleMapsDirectionsUrl, gpxFileName, routeGpx } from "../src/export.ts";
+import { GOOGLE_MAPS_MAX_WAYPOINTS, googleMapsDirectionsUrl, gpxFileName, placeMapsUrl, routeGpx } from "../src/export.ts";
 import { sharedIdFromPath, shareUrl } from "../src/share.ts";
 import type { PlannedStop } from "../src/types.ts";
 
@@ -91,4 +91,11 @@ test("share links", () => {
   assert.equal(sharedIdFromPath("/t/41"), null); // never an integer id
   assert.equal(sharedIdFromPath("/"), null);
   assert.equal(sharedIdFromPath(`/x/${id}`), null);
+});
+
+
+test("place link: a Google Maps search for the name, centred on the place", () => {
+  const url = placeMapsUrl({ name: "Motel 6 Fresno - Blackstone & 41", lat: 36.810049, lon: -119.75 });
+  assert.equal(url, "https://www.google.com/maps/search/Motel%206%20Fresno%20-%20Blackstone%20%26%2041/@36.81005,-119.75000,17z");
+  assert.ok(!url.includes("api=1"), "the documented form ignores coordinates after a name");
 });

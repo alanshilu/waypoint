@@ -1879,6 +1879,19 @@ button:disabled {
   background: var(--rust);
 }
 
+/* the place's name opens it on Google Maps */
+.place-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--hairline);
+  text-underline-offset: 2px;
+}
+
+.place-link:hover {
+  color: var(--rust-ink);
+  text-decoration-color: currentColor;
+}
+
 .place-reason,
 .place-facts {
   display: block;

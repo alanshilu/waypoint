@@ -44,6 +44,16 @@ export function googleMapsDirectionsUrl(origin: Place, destination: Place, stops
   };
 }
 
+/**
+ * A place on Google Maps, where its reviews, photos and hours are: a search for its name, centred on where
+ * OpenStreetMap puts it. Google's documented Maps URLs (?api=1&query=) ignore coordinates written after a name
+ * and search the whole map, so a chain like "Motel 6" would open somewhere else; this /search/<name>/@lat,lon
+ * form (the one Google's own links use) keeps the search at the place.
+ */
+export function placeMapsUrl(place: { name: string; lat: number; lon: number }): string {
+  return `https://www.google.com/maps/search/${encodeURIComponent(place.name)}/@${place.lat.toFixed(5)},${place.lon.toFixed(5)},17z`;
+}
+
 const escapeXml = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
